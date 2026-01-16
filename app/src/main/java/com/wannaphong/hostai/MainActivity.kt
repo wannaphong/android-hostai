@@ -37,6 +37,7 @@ class MainActivity : AppCompatActivity() {
     private var isBound = false
     private var selectedModelPath: String? = null
     private var selectedModelName: String? = null
+    private var wasServerRunningBeforeModelChange = false
     
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
@@ -88,7 +89,12 @@ class MainActivity : AppCompatActivity() {
         }
         
         binding.selectModelButton.setOnClickListener {
-            selectModelFile()
+            if (isServerRunning()) {
+                // If server is running, stop it first before allowing model change
+                changeModel()
+            } else {
+                selectModelFile()
+            }
         }
         
         binding.viewLogsButton.setOnClickListener {
@@ -167,7 +173,9 @@ class MainActivity : AppCompatActivity() {
             val model = apiServerService?.getLoadedModel()
             val modelName = model?.getModelName() ?: "Unknown"
             binding.modelStatusText.text = getString(R.string.model_loaded, modelName)
-            binding.selectModelButton.isEnabled = false
+            // Enable the button to allow changing model while running
+            binding.selectModelButton.isEnabled = true
+            binding.selectModelButton.text = getString(R.string.change_model)
         } else {
             binding.serverStatusText.text = getString(R.string.server_stopped)
             binding.serverStatusText.setTextColor(Color.RED)
@@ -184,6 +192,7 @@ class MainActivity : AppCompatActivity() {
                 binding.modelStatusText.text = getString(R.string.no_model_selected)
             }
             binding.selectModelButton.isEnabled = true
+            binding.selectModelButton.text = getString(R.string.select_model)
         }
     }
     
@@ -250,6 +259,21 @@ class MainActivity : AppCompatActivity() {
         }
     }
     
+    private fun changeModel() {
+        LogManager.i("MainActivity", "User requested to change model while server is running")
+        
+        // Stop the server first
+        wasServerRunningBeforeModelChange = true
+        stopServer()
+        
+        Toast.makeText(this, R.string.server_stopped_to_change_model, Toast.LENGTH_SHORT).show()
+        
+        // Wait for server to stop, then open file picker
+        binding.root.postDelayed({
+            selectModelFile()
+        }, 600)
+    }
+    
     private fun selectModelFile() {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
@@ -313,6 +337,15 @@ class MainActivity : AppCompatActivity() {
             LogManager.i("MainActivity", "Model file copied successfully to: ${internalFile.absolutePath}")
             Toast.makeText(this, "Model selected: $validFileName", Toast.LENGTH_SHORT).show()
             updateUI()
+            
+            // If server was running before model change, restart it with the new model
+            if (wasServerRunningBeforeModelChange) {
+                wasServerRunningBeforeModelChange = false
+                LogManager.i("MainActivity", "Restarting server with new model")
+                binding.root.postDelayed({
+                    startServer()
+                }, 500)
+            }
             
         } catch (e: Exception) {
             LogManager.e("MainActivity", "Failed to load model file", e)
