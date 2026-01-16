@@ -5,74 +5,151 @@ import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonObject
-import fi.iki.elonen.NanoHTTPD
+import io.ktor.http.*
+import io.ktor.server.application.*
+import io.ktor.server.cio.*
+import io.ktor.server.engine.*
+import io.ktor.server.request.*
+import io.ktor.server.response.*
+import io.ktor.server.routing.*
+import kotlinx.coroutines.*
 import java.io.IOException
-import java.io.PipedInputStream
-import java.io.PipedOutputStream
-import java.util.concurrent.atomic.AtomicBoolean
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 
 /**
- * OpenAI-compatible API server implementation using NanoHTTPD.
+ * OpenAI-compatible API server implementation using Ktor.
  * Implements the following endpoints:
  * - POST /v1/chat/completions - Chat completions (OpenAI format)
  * - POST /v1/completions - Text completions (OpenAI format)
  * - GET /v1/models - List available models
  * - GET /chat - Chat UI interface
  */
-class OpenAIApiServer(private val port: Int, private val model: LlamaModel, private val context: Context) : NanoHTTPD(port) {
+class OpenAIApiServer(
+    private val port: Int,
+    private val model: LlamaModel,
+    private val context: Context
+) {
     
     private val gson = GsonBuilder()
         .disableHtmlEscaping()
         .create()
     
+    private var server: ApplicationEngine? = null
+    
     companion object {
         private const val TAG = "OpenAIApiServer"
         // Maximum request body size (10 MB) to prevent memory exhaustion attacks
         private const val MAX_REQUEST_BODY_SIZE = 10 * 1024 * 1024
-        // Stream buffer size (64 KB) for PipedInputStream and BufferedWriter to prevent blocking
-        private const val STREAM_BUFFER_SIZE = 65536
     }
     
-    override fun serve(session: IHTTPSession): Response {
-        val uri = session.uri
-        val method = session.method
+    fun start() {
+        server = embeddedServer(CIO, port = port, host = "0.0.0.0") {
+            configureRouting()
+        }.start(wait = false)
         
-        LogManager.d(TAG, "Received ${method.name} request to $uri")
+        LogManager.i(TAG, "Ktor server started on port $port")
+    }
+    
+    fun stop() {
+        server?.stop(1000, 2000)
+        server = null
+        LogManager.i(TAG, "Ktor server stopped")
+    }
+    
+    /**
+     * Safely receive request body with size limits to prevent memory exhaustion attacks.
+     */
+    private suspend fun ApplicationCall.receiveTextWithSizeLimit(): String {
+        val contentLength = request.headers[HttpHeaders.ContentLength]?.toLongOrNull()
         
-        return try {
-            when {
-                uri == "/v1/models" && method == Method.GET -> handleModels()
-                uri == "/v1/chat/completions" && method == Method.POST -> handleChatCompletions(session)
-                uri == "/v1/completions" && method == Method.POST -> handleCompletions(session)
-                uri == "/" && method == Method.GET -> handleRoot()
-                uri == "/health" && method == Method.GET -> handleHealth()
-                uri == "/chat" && method == Method.GET -> handleChatUI()
-                uri.startsWith("/assets/") && method == Method.GET -> handleAssets(uri)
-                else -> {
-                    LogManager.w(TAG, "Endpoint not found: $uri")
-                    newFixedLengthResponse(
-                        Response.Status.NOT_FOUND,
-                        MIME_PLAINTEXT,
-                        "Endpoint not found"
-                    )
-                }
+        // Security: Check content length before reading
+        if (contentLength != null && contentLength > MAX_REQUEST_BODY_SIZE) {
+            LogManager.w(TAG, "Request body too large: $contentLength bytes (max: $MAX_REQUEST_BODY_SIZE)")
+            throw IOException("Request body too large")
+        }
+        
+        return receiveText()
+    }
+    
+    private fun Application.configureRouting() {
+        routing {
+            // Health check
+            get("/health") {
+                handleHealth(call)
             }
-        } catch (e: Exception) {
-            LogManager.e(TAG, "Error handling request to $uri", e)
-            newFixedLengthResponse(
-                Response.Status.INTERNAL_ERROR,
-                "application/json; charset=utf-8",
-                gson.toJson(mapOf("error" to mapOf("message" to e.message)))
-            )
+            
+            // Models endpoint
+            get("/v1/models") {
+                handleModels(call)
+            }
+            
+            // Chat completions
+            post("/v1/chat/completions") {
+                handleChatCompletions(call)
+            }
+            
+            // Text completions
+            post("/v1/completions") {
+                handleCompletions(call)
+            }
+            
+            // Root endpoint
+            get("/") {
+                handleRoot(call)
+            }
+            
+            // Chat UI
+            get("/chat") {
+                handleChatUI(call)
+            }
+            
+            // Assets
+            get("/assets/{file}") {
+                val fileName = call.parameters["file"] ?: ""
+                handleAssets(call, fileName)
+            }
         }
     }
     
-    private fun handleRoot(): Response {
+    private suspend fun handleHealth(call: ApplicationCall) {
+        LogManager.d(TAG, "Received GET request to /health")
+        
+        val health = mapOf(
+            "status" to "ok",
+            "model_loaded" to model.isModelLoaded()
+        )
+        
+        call.respondText(
+            gson.toJson(health),
+            ContentType.Application.Json,
+            HttpStatusCode.OK
+        )
+    }
+    
+    private suspend fun handleModels(call: ApplicationCall) {
+        LogManager.d(TAG, "Received GET request to /v1/models")
+        
+        val models = mapOf(
+            "object" to "list",
+            "data" to listOf(
+                mapOf(
+                    "id" to model.getModelName(),
+                    "object" to "model",
+                    "created" to System.currentTimeMillis() / 1000,
+                    "owned_by" to "hostai"
+                )
+            )
+        )
+        
+        call.respondText(
+            gson.toJson(models),
+            ContentType.Application.Json,
+            HttpStatusCode.OK
+        )
+    }
+    
+    private suspend fun handleRoot(call: ApplicationCall) {
+        LogManager.d(TAG, "Received GET request to /")
+        
         val html = """
             <!DOCTYPE html>
             <html>
@@ -115,121 +192,110 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
             </html>
         """.trimIndent()
         
-        return newFixedLengthResponse(Response.Status.OK, "text/html", html)
+        call.respondText(html, ContentType.Text.Html, HttpStatusCode.OK)
     }
     
-    private fun handleHealth(): Response {
-        val health = mapOf(
-            "status" to "ok",
-            "model_loaded" to model.isModelLoaded()
-        )
-        return newFixedLengthResponse(
-            Response.Status.OK,
-            "application/json; charset=utf-8",
-            gson.toJson(health)
-        )
-    }
-    
-    private fun handleChatUI(): Response {
-        return try {
+    private suspend fun handleChatUI(call: ApplicationCall) {
+        LogManager.d(TAG, "Received GET request to /chat")
+        
+        try {
             val inputStream = context.assets.open("index.html")
             val html = inputStream.bufferedReader().use { it.readText() }
-            newFixedLengthResponse(Response.Status.OK, "text/html", html)
+            call.respondText(html, ContentType.Text.Html, HttpStatusCode.OK)
         } catch (e: Exception) {
             LogManager.e(TAG, "Error loading chat UI", e)
-            newFixedLengthResponse(
-                Response.Status.INTERNAL_ERROR,
-                "text/html",
-                "<html><body><h1>Error loading chat UI</h1><p>${e.message}</p></body></html>"
+            call.respondText(
+                "<html><body><h1>Error loading chat UI</h1><p>${e.message}</p></body></html>",
+                ContentType.Text.Html,
+                HttpStatusCode.InternalServerError
             )
         }
     }
     
-    private fun handleAssets(uri: String): Response {
-        return try {
-            // Remove "/assets/" prefix to get the actual file name
-            val fileName = uri.removePrefix("/assets/")
-            
+    private suspend fun handleAssets(call: ApplicationCall, fileName: String) {
+        LogManager.d(TAG, "Received GET request to /assets/$fileName")
+        
+        try {
             // Security: Prevent path traversal attacks
             if (fileName.contains("..") || fileName.startsWith("/") || fileName.contains("\\")) {
-                LogManager.w(TAG, "Rejected potential path traversal attempt: $uri")
-                return newFixedLengthResponse(
-                    Response.Status.FORBIDDEN,
-                    MIME_PLAINTEXT,
-                    "Invalid asset path"
+                LogManager.w(TAG, "Rejected potential path traversal attempt: $fileName")
+                call.respondText(
+                    "Invalid asset path",
+                    ContentType.Text.Plain,
+                    HttpStatusCode.Forbidden
                 )
+                return
             }
             
             // Determine MIME type based on file extension
-            val mimeType = when {
-                fileName.endsWith(".ico") -> "image/x-icon"
-                fileName.endsWith(".json") -> "application/json"
-                fileName.endsWith(".html") -> "text/html"
-                fileName.endsWith(".css") -> "text/css"
-                fileName.endsWith(".js") -> "application/javascript"
-                else -> "application/octet-stream"
+            val contentType = when {
+                fileName.endsWith(".ico") -> ContentType.Image.XIcon
+                fileName.endsWith(".json") -> ContentType.Application.Json
+                fileName.endsWith(".html") -> ContentType.Text.Html
+                fileName.endsWith(".css") -> ContentType.Text.CSS
+                fileName.endsWith(".js") -> ContentType.Application.JavaScript
+                else -> ContentType.Application.OctetStream
             }
             
             val inputStream = context.assets.open(fileName)
             val bytes = inputStream.readBytes()
             inputStream.close()
             
-            newFixedLengthResponse(Response.Status.OK, mimeType, bytes.inputStream(), bytes.size.toLong())
+            call.respondBytes(bytes, contentType, HttpStatusCode.OK)
         } catch (e: Exception) {
-            LogManager.e(TAG, "Error loading asset: $uri", e)
-            newFixedLengthResponse(
-                Response.Status.NOT_FOUND,
-                MIME_PLAINTEXT,
-                "Asset not found"
+            LogManager.e(TAG, "Error loading asset: $fileName", e)
+            call.respondText(
+                "Asset not found",
+                ContentType.Text.Plain,
+                HttpStatusCode.NotFound
             )
         }
     }
     
-    private fun handleModels(): Response {
-        val models = mapOf(
-            "object" to "list",
-            "data" to listOf(
-                mapOf(
-                    "id" to model.getModelName(),
-                    "object" to "model",
-                    "created" to System.currentTimeMillis() / 1000,
-                    "owned_by" to "hostai"
-                )
-            )
-        )
+    private suspend fun handleChatCompletions(call: ApplicationCall) {
+        LogManager.d(TAG, "Received POST request to /v1/chat/completions")
         
-        return newFixedLengthResponse(
-            Response.Status.OK,
-            "application/json; charset=utf-8",
-            gson.toJson(models)
-        )
+        try {
+            val bodyText = call.receiveTextWithSizeLimit()
+            val request = gson.fromJson(bodyText, JsonObject::class.java)
+            
+            LogManager.i(TAG, "Chat completion request received")
+            
+            // Extract parameters
+            val messages = request.getAsJsonArray("messages")
+            val stream = request.get("stream")?.asBoolean ?: false
+            
+            // Build generation config from request parameters
+            val config = extractGenerationConfig(request)
+            
+            // Build prompt from messages
+            val prompt = buildPromptFromMessages(messages)
+            
+            // Log a preview of the prompt to verify character encoding
+            val promptPreview = if (prompt.length > 100) prompt.take(100) + "..." else prompt
+            LogManager.d(TAG, "Prompt preview: $promptPreview")
+            LogManager.d(TAG, "Chat completion - stream: $stream, maxTokens: ${config.maxTokens}, temp: ${config.temperature}")
+            
+            if (stream) {
+                handleChatStreamingResponse(call, prompt, config)
+            } else {
+                handleChatNonStreamingResponse(call, prompt, config)
+            }
+        } catch (e: Exception) {
+            LogManager.e(TAG, "Error handling chat completions", e)
+            call.respondText(
+                gson.toJson(mapOf("error" to mapOf("message" to e.message))),
+                ContentType.Application.Json,
+                HttpStatusCode.InternalServerError
+            )
+        }
     }
     
-    private fun handleChatCompletions(session: IHTTPSession): Response {
-        val body = getRequestBody(session)
-        val request = gson.fromJson(body, JsonObject::class.java)
-        
-        LogManager.i(TAG, "Chat completion request received")
-        
-        // Extract parameters
-        val messages = request.getAsJsonArray("messages")
-        val stream = request.get("stream")?.asBoolean ?: false
-        
-        // Build generation config from request parameters
-        val config = extractGenerationConfig(request)
-        
-        // Build prompt from messages
-        val prompt = buildPromptFromMessages(messages)
-        
-        // Log a preview of the prompt to verify character encoding
-        val promptPreview = if (prompt.length > 100) prompt.take(100) + "..." else prompt
-        LogManager.d(TAG, "Prompt preview: $promptPreview")
-        LogManager.d(TAG, "Chat completion - stream: $stream, maxTokens: ${config.maxTokens}, temp: ${config.temperature}")
-        
-        if (stream) {
-            return handleChatStreamingResponse(prompt, config)
-        }
-        
+    private suspend fun handleChatNonStreamingResponse(
+        call: ApplicationCall,
+        prompt: String,
+        config: GenerationConfig
+    ) {
         // Generate response
         val completion = model.generate(prompt, config)
         
@@ -257,28 +323,154 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
         
         LogManager.i(TAG, "Chat completion completed successfully")
         
-        return newFixedLengthResponse(
-            Response.Status.OK,
-            "application/json; charset=utf-8",
-            gson.toJson(response)
+        call.respondText(
+            gson.toJson(response),
+            ContentType.Application.Json,
+            HttpStatusCode.OK
         )
     }
     
-    private fun handleCompletions(session: IHTTPSession): Response {
-        val body = getRequestBody(session)
-        val request = gson.fromJson(body, JsonObject::class.java)
+    private suspend fun handleChatStreamingResponse(
+        call: ApplicationCall,
+        prompt: String,
+        config: GenerationConfig
+    ) {
+        LogManager.i(TAG, "Starting chat streaming response")
         
-        // Extract parameters
-        val prompt = request.get("prompt")?.asString ?: ""
-        val stream = request.get("stream")?.asBoolean ?: false
+        // Set headers before starting response
+        call.response.header(HttpHeaders.ContentType, "text/event-stream")
+        call.response.header(HttpHeaders.CacheControl, "no-cache")
+        call.response.header(HttpHeaders.Connection, "keep-alive")
         
-        // Build generation config from request parameters
-        val config = extractGenerationConfig(request)
-        
-        if (stream) {
-            return handleCompletionStreamingResponse(prompt, config)
+        call.respondOutputStream {
+            val writer = this.writer(Charsets.UTF_8)
+            val id = "chatcmpl-${System.currentTimeMillis()}"
+            val created = System.currentTimeMillis() / 1000
+            var tokenCount = 0
+            
+            try {
+                val job = model.generateStream(prompt, config) { token ->
+                    try {
+                        tokenCount++
+                        
+                        // Format according to OpenAI SSE format for chat
+                        val chunk = mapOf(
+                            "id" to id,
+                            "object" to "chat.completion.chunk",
+                            "created" to created,
+                            "model" to model.getModelName(),
+                            "choices" to listOf(
+                                mapOf(
+                                    "index" to 0,
+                                    "delta" to mapOf(
+                                        "content" to token
+                                    ),
+                                    "finish_reason" to null
+                                )
+                            )
+                        )
+                        
+                        // Write SSE format: "data: {json}\n\n"
+                        writer.write("data: ${gson.toJson(chunk)}\n\n")
+                        writer.flush()
+                        
+                        LogManager.d(TAG, "Streamed token #$tokenCount")
+                    } catch (e: IOException) {
+                        // Client disconnected - stop streaming gracefully
+                        LogManager.d(TAG, "Client disconnected during streaming (token #$tokenCount)")
+                        throw e
+                    } catch (e: Exception) {
+                        LogManager.e(TAG, "Error writing token to stream", e)
+                        throw e
+                    }
+                }
+                
+                // Wait for streaming to complete, or handle error if job is null
+                if (job != null) {
+                    job.join()
+                } else {
+                    LogManager.e(TAG, "Failed to start streaming: generateStream returned null")
+                    // Write error chunk to client
+                    val errorChunk = mapOf(
+                        "id" to id,
+                        "object" to "chat.completion.chunk",
+                        "created" to created,
+                        "model" to model.getModelName(),
+                        "choices" to listOf(
+                            mapOf(
+                                "index" to 0,
+                                "delta" to mapOf(
+                                    "content" to "Error: Failed to start streaming"
+                                ),
+                                "finish_reason" to "error"
+                            )
+                        )
+                    )
+                    writer.write("data: ${gson.toJson(errorChunk)}\n\n")
+                    writer.write("data: [DONE]\n\n")
+                    writer.flush()
+                    return@respondOutputStream
+                }
+                
+                // Send final chunk with finish_reason
+                val finalChunk = mapOf(
+                    "id" to id,
+                    "object" to "chat.completion.chunk",
+                    "created" to created,
+                    "model" to model.getModelName(),
+                    "choices" to listOf(
+                        mapOf(
+                            "index" to 0,
+                            "delta" to mapOf<String, String>(),
+                            "finish_reason" to "stop"
+                        )
+                    )
+                )
+                writer.write("data: ${gson.toJson(finalChunk)}\n\n")
+                writer.write("data: [DONE]\n\n")
+                writer.flush()
+                
+                LogManager.i(TAG, "Chat streaming completed with $tokenCount tokens")
+            } catch (e: Exception) {
+                LogManager.e(TAG, "Error in chat streaming", e)
+            }
         }
+    }
+    
+    private suspend fun handleCompletions(call: ApplicationCall) {
+        LogManager.d(TAG, "Received POST request to /v1/completions")
         
+        try {
+            val bodyText = call.receiveTextWithSizeLimit()
+            val request = gson.fromJson(bodyText, JsonObject::class.java)
+            
+            // Extract parameters
+            val prompt = request.get("prompt")?.asString ?: ""
+            val stream = request.get("stream")?.asBoolean ?: false
+            
+            // Build generation config from request parameters
+            val config = extractGenerationConfig(request)
+            
+            if (stream) {
+                handleCompletionStreamingResponse(call, prompt, config)
+            } else {
+                handleCompletionNonStreamingResponse(call, prompt, config)
+            }
+        } catch (e: Exception) {
+            LogManager.e(TAG, "Error handling completions", e)
+            call.respondText(
+                gson.toJson(mapOf("error" to mapOf("message" to e.message))),
+                ContentType.Application.Json,
+                HttpStatusCode.InternalServerError
+            )
+        }
+    }
+    
+    private suspend fun handleCompletionNonStreamingResponse(
+        call: ApplicationCall,
+        prompt: String,
+        config: GenerationConfig
+    ) {
         // Generate response
         val completion = model.generate(prompt, config)
         
@@ -301,266 +493,113 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
             )
         )
         
-        return newFixedLengthResponse(
-            Response.Status.OK,
-            "application/json; charset=utf-8",
-            gson.toJson(response)
+        call.respondText(
+            gson.toJson(response),
+            ContentType.Application.Json,
+            HttpStatusCode.OK
         )
     }
     
-    private fun handleChatStreamingResponse(prompt: String, config: GenerationConfig): Response {
-        LogManager.i(TAG, "Starting chat streaming response")
-        
-        try {
-            val pipedOutputStream = PipedOutputStream()
-            // Increase buffer size to 64KB to prevent blocking when consumer is slower than producer
-            val pipedInputStream = PipedInputStream(pipedOutputStream, STREAM_BUFFER_SIZE)
-            
-            // Start streaming in a coroutine
-            CoroutineScope(Dispatchers.IO).launch {
-                var streamJob: Job? = null
-                try {
-                    // Use larger buffer size for BufferedWriter to match PipedInputStream buffer
-                    val writer = java.io.BufferedWriter(
-                        java.io.OutputStreamWriter(pipedOutputStream, Charsets.UTF_8),
-                        STREAM_BUFFER_SIZE
-                    )
-                    val id = "chatcmpl-${System.currentTimeMillis()}"
-                    val created = System.currentTimeMillis() / 1000
-                    var tokenCount = 0
-                    val streamClosed = AtomicBoolean(false)
-                    
-                    // Start the stream
-                    streamJob = model.generateStream(prompt, config) { token ->
-                        // Check if stream is already closed, if so, don't process more tokens
-                        if (streamClosed.get()) {
-                            return@generateStream
-                        }
-                        
-                        try {
-                            tokenCount++
-                            
-                            // Format according to OpenAI SSE format for chat
-                            val chunk = mapOf(
-                                "id" to id,
-                                "object" to "chat.completion.chunk",
-                                "created" to created,
-                                "model" to model.getModelName(),
-                                "choices" to listOf(
-                                    mapOf(
-                                        "index" to 0,
-                                        "delta" to mapOf(
-                                            "content" to token
-                                        ),
-                                        "finish_reason" to null
-                                    )
-                                )
-                            )
-                            
-                            // Write SSE format: "data: {json}\n\n"
-                            writer.write("data: ${gson.toJson(chunk)}\n\n")
-                            writer.flush()
-                            
-                            LogManager.d(TAG, "Streamed token #$tokenCount")
-                        } catch (e: IOException) {
-                            // Client disconnected or pipe closed - stop streaming gracefully
-                            LogManager.d(TAG, "Client disconnected during streaming (token #$tokenCount)")
-                            streamClosed.set(true)
-                        } catch (e: Exception) {
-                            LogManager.e(TAG, "Error writing token to stream", e)
-                            streamClosed.set(true)
-                        }
-                    }
-                    
-                    // Wait for streaming to complete (or be cancelled)
-                    streamJob?.join()
-                    
-                    // Only send final chunks if stream is not closed
-                    if (!streamClosed.get()) {
-                        try {
-                            // Send final chunk with finish_reason
-                            val finalChunk = mapOf(
-                                "id" to id,
-                                "object" to "chat.completion.chunk",
-                                "created" to created,
-                                "model" to model.getModelName(),
-                                "choices" to listOf(
-                                    mapOf(
-                                        "index" to 0,
-                                        "delta" to mapOf<String, String>(),
-                                        "finish_reason" to "stop"
-                                    )
-                                )
-                            )
-                            writer.write("data: ${gson.toJson(finalChunk)}\n\n")
-                            writer.write("data: [DONE]\n\n")
-                            writer.flush()
-                            
-                            LogManager.i(TAG, "Chat streaming completed with $tokenCount tokens")
-                        } catch (e: IOException) {
-                            LogManager.d(TAG, "Client disconnected before final chunk could be sent")
-                        }
-                    } else {
-                        LogManager.i(TAG, "Chat streaming stopped early at $tokenCount tokens (client disconnected)")
-                    }
-                    
-                    writer.close()
-                } catch (e: Exception) {
-                    LogManager.e(TAG, "Error in chat streaming", e)
-                } finally {
-                    streamJob?.cancel()
-                    try {
-                        pipedOutputStream.close()
-                    } catch (e: IOException) {
-                        // Ignore - already closed
-                    }
-                }
-            }
-            
-            // Return response with text/event-stream content type
-            val response = newChunkedResponse(
-                Response.Status.OK,
-                "text/event-stream",
-                pipedInputStream
-            )
-            response.addHeader("Cache-Control", "no-cache")
-            response.addHeader("Connection", "keep-alive")
-            return response
-            
-        } catch (e: Exception) {
-            LogManager.e(TAG, "Failed to start chat streaming", e)
-            return newFixedLengthResponse(
-                Response.Status.INTERNAL_ERROR,
-                "application/json; charset=utf-8",
-                gson.toJson(mapOf("error" to mapOf("message" to e.message)))
-            )
-        }
-    }
-    
-    private fun handleCompletionStreamingResponse(prompt: String, config: GenerationConfig): Response {
+    private suspend fun handleCompletionStreamingResponse(
+        call: ApplicationCall,
+        prompt: String,
+        config: GenerationConfig
+    ) {
         LogManager.i(TAG, "Starting completion streaming response")
         
-        try {
-            val pipedOutputStream = PipedOutputStream()
-            // Increase buffer size to 64KB to prevent blocking when consumer is slower than producer
-            val pipedInputStream = PipedInputStream(pipedOutputStream, STREAM_BUFFER_SIZE)
+        // Set headers before starting response
+        call.response.header(HttpHeaders.ContentType, "text/event-stream")
+        call.response.header(HttpHeaders.CacheControl, "no-cache")
+        call.response.header(HttpHeaders.Connection, "keep-alive")
+        
+        call.respondOutputStream {
+            val writer = this.writer(Charsets.UTF_8)
+            val id = "cmpl-${System.currentTimeMillis()}"
+            val created = System.currentTimeMillis() / 1000
+            var tokenCount = 0
             
-            // Start streaming in a coroutine
-            CoroutineScope(Dispatchers.IO).launch {
-                var streamJob: Job? = null
-                try {
-                    // Use larger buffer size for BufferedWriter to match PipedInputStream buffer
-                    val writer = java.io.BufferedWriter(
-                        java.io.OutputStreamWriter(pipedOutputStream, Charsets.UTF_8),
-                        STREAM_BUFFER_SIZE
-                    )
-                    val id = "cmpl-${System.currentTimeMillis()}"
-                    val created = System.currentTimeMillis() / 1000
-                    var tokenCount = 0
-                    val streamClosed = AtomicBoolean(false)
-                    
-                    // Start the stream
-                    streamJob = model.generateStream(prompt, config) { token ->
-                        // Check if stream is already closed, if so, don't process more tokens
-                        if (streamClosed.get()) {
-                            return@generateStream
-                        }
-                        
-                        try {
-                            tokenCount++
-                            
-                            // Format according to OpenAI SSE format for completions
-                            val chunk = mapOf(
-                                "id" to id,
-                                "object" to "text_completion",
-                                "created" to created,
-                                "model" to model.getModelName(),
-                                "choices" to listOf(
-                                    mapOf(
-                                        "text" to token,
-                                        "index" to 0,
-                                        "finish_reason" to null
-                                    )
-                                )
-                            )
-                            
-                            // Write SSE format: "data: {json}\n\n"
-                            writer.write("data: ${gson.toJson(chunk)}\n\n")
-                            writer.flush()
-                            
-                            LogManager.d(TAG, "Streamed token #$tokenCount")
-                        } catch (e: IOException) {
-                            // Client disconnected or pipe closed - stop streaming gracefully
-                            LogManager.d(TAG, "Client disconnected during streaming (token #$tokenCount)")
-                            streamClosed.set(true)
-                        } catch (e: Exception) {
-                            LogManager.e(TAG, "Error writing token to stream", e)
-                            streamClosed.set(true)
-                        }
-                    }
-                    
-                    // Wait for streaming to complete (or be cancelled)
-                    streamJob?.join()
-                    
-                    // Only send final chunks if stream is not closed
-                    if (!streamClosed.get()) {
-                        try {
-                            // Send final chunk with finish_reason
-                            val finalChunk = mapOf(
-                                "id" to id,
-                                "object" to "text_completion",
-                                "created" to created,
-                                "model" to model.getModelName(),
-                                "choices" to listOf(
-                                    mapOf(
-                                        "text" to "",
-                                        "index" to 0,
-                                        "finish_reason" to "stop"
-                                    )
-                                )
-                            )
-                            writer.write("data: ${gson.toJson(finalChunk)}\n\n")
-                            writer.write("data: [DONE]\n\n")
-                            writer.flush()
-                            
-                            LogManager.i(TAG, "Completion streaming completed with $tokenCount tokens")
-                        } catch (e: IOException) {
-                            LogManager.d(TAG, "Client disconnected before final chunk could be sent")
-                        }
-                    } else {
-                        LogManager.i(TAG, "Completion streaming stopped early at $tokenCount tokens (client disconnected)")
-                    }
-                    
-                    writer.close()
-                } catch (e: Exception) {
-                    LogManager.e(TAG, "Error in completion streaming", e)
-                } finally {
-                    streamJob?.cancel()
+            try {
+                val job = model.generateStream(prompt, config) { token ->
                     try {
-                        pipedOutputStream.close()
+                        tokenCount++
+                        
+                        // Format according to OpenAI SSE format for completions
+                        val chunk = mapOf(
+                            "id" to id,
+                            "object" to "text_completion",
+                            "created" to created,
+                            "model" to model.getModelName(),
+                            "choices" to listOf(
+                                mapOf(
+                                    "text" to token,
+                                    "index" to 0,
+                                    "finish_reason" to null
+                                )
+                            )
+                        )
+                        
+                        // Write SSE format: "data: {json}\n\n"
+                        writer.write("data: ${gson.toJson(chunk)}\n\n")
+                        writer.flush()
+                        
+                        LogManager.d(TAG, "Streamed token #$tokenCount")
                     } catch (e: IOException) {
-                        // Ignore - already closed
+                        // Client disconnected - stop streaming gracefully
+                        LogManager.d(TAG, "Client disconnected during streaming (token #$tokenCount)")
+                        throw e
+                    } catch (e: Exception) {
+                        LogManager.e(TAG, "Error writing token to stream", e)
+                        throw e
                     }
                 }
+                
+                // Wait for streaming to complete, or handle error if job is null
+                if (job != null) {
+                    job.join()
+                } else {
+                    LogManager.e(TAG, "Failed to start streaming: generateStream returned null")
+                    // Write error chunk to client
+                    val errorChunk = mapOf(
+                        "id" to id,
+                        "object" to "text_completion",
+                        "created" to created,
+                        "model" to model.getModelName(),
+                        "choices" to listOf(
+                            mapOf(
+                                "text" to "Error: Failed to start streaming",
+                                "index" to 0,
+                                "finish_reason" to "error"
+                            )
+                        )
+                    )
+                    writer.write("data: ${gson.toJson(errorChunk)}\n\n")
+                    writer.write("data: [DONE]\n\n")
+                    writer.flush()
+                    return@respondOutputStream
+                }
+                
+                // Send final chunk with finish_reason
+                val finalChunk = mapOf(
+                    "id" to id,
+                    "object" to "text_completion",
+                    "created" to created,
+                    "model" to model.getModelName(),
+                    "choices" to listOf(
+                        mapOf(
+                            "text" to "",
+                            "index" to 0,
+                            "finish_reason" to "stop"
+                        )
+                    )
+                )
+                writer.write("data: ${gson.toJson(finalChunk)}\n\n")
+                writer.write("data: [DONE]\n\n")
+                writer.flush()
+                
+                LogManager.i(TAG, "Completion streaming completed with $tokenCount tokens")
+            } catch (e: Exception) {
+                LogManager.e(TAG, "Error in completion streaming", e)
             }
-            
-            // Return response with text/event-stream content type
-            val response = newChunkedResponse(
-                Response.Status.OK,
-                "text/event-stream",
-                pipedInputStream
-            )
-            response.addHeader("Cache-Control", "no-cache")
-            response.addHeader("Connection", "keep-alive")
-            return response
-            
-        } catch (e: Exception) {
-            LogManager.e(TAG, "Failed to start completion streaming", e)
-            return newFixedLengthResponse(
-                Response.Status.INTERNAL_ERROR,
-                "application/json; charset=utf-8",
-                gson.toJson(mapOf("error" to mapOf("message" to e.message)))
-            )
         }
     }
     
@@ -587,58 +626,5 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
             topP = request.get("top_p")?.asDouble ?: 0.95,
             seed = request.get("seed")?.asInt ?: -1
         )
-    }
-    
-    private fun getRequestBody(session: IHTTPSession): String {
-        return try {
-            // Read the input stream directly with UTF-8 encoding to properly handle
-            // multibyte characters like Thai, Chinese, Japanese, etc.
-            
-            // HTTP headers are case-insensitive per RFC, NanoHTTPD normalizes to lowercase
-            // But we check both for defensive programming
-            val contentLength = (session.headers["content-length"] 
-                ?: session.headers["Content-Length"])?.toIntOrNull() ?: 0
-            
-            if (contentLength > 0) {
-                // Security: Prevent memory exhaustion attacks by limiting request body size
-                if (contentLength > MAX_REQUEST_BODY_SIZE) {
-                    LogManager.w(TAG, "Request body too large: $contentLength bytes (max: $MAX_REQUEST_BODY_SIZE)")
-                    throw IOException("Request body too large")
-                }
-                
-                // Read the request body directly from input stream with UTF-8
-                val buffer = ByteArray(contentLength)
-                var bytesRead = 0
-                val inputStream = session.inputStream
-                
-                // Manual read loop (can't use readNBytes as project targets Java 8)
-                // Read until we have all the bytes or reach EOF
-                while (bytesRead < contentLength) {
-                    val read = inputStream.read(buffer, bytesRead, contentLength - bytesRead)
-                    if (read == -1) {
-                        // Reached EOF before reading all expected bytes - this is a malformed request
-                        val errorMsg = "Incomplete request body: expected $contentLength bytes, got $bytesRead"
-                        LogManager.w(TAG, errorMsg)
-                        throw IOException(errorMsg)
-                    }
-                    bytesRead += read
-                }
-                
-                // Decode with UTF-8 to properly handle multibyte characters
-                String(buffer, 0, bytesRead, Charsets.UTF_8)
-            } else {
-                // Fallback to parseBody for empty or unknown content-length
-                // NOTE: This fallback will use system default charset and may not properly
-                // handle multibyte characters. However, legitimate POST requests from
-                // HTTP clients should always include Content-Length header.
-                val map = mutableMapOf<String, String>()
-                session.parseBody(map)
-                map["postData"] ?: ""
-            }
-        } catch (e: IOException) {
-            Log.e(TAG, "Failed to parse request body", e)
-            LogManager.e(TAG, "Failed to parse request body", e)
-            ""
-        }
     }
 }
