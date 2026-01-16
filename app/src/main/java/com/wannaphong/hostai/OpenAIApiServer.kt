@@ -524,8 +524,8 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
             // Read the input stream directly with UTF-8 encoding to properly handle
             // multibyte characters like Thai, Chinese, Japanese, etc.
             
-            // HTTP headers are case-insensitive per RFC, but NanoHTTPD normalizes to lowercase
-            // Try both common variations to be safe
+            // HTTP headers are case-insensitive per RFC, NanoHTTPD normalizes to lowercase
+            // But we check both for defensive programming
             val contentLength = (session.headers["content-length"] 
                 ?: session.headers["Content-Length"])?.toIntOrNull() ?: 0
             
@@ -541,6 +541,7 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
                 var bytesRead = 0
                 val inputStream = session.inputStream
                 
+                // Manual read loop (can't use readNBytes as project targets Java 8)
                 // Read until we have all the bytes or reach EOF
                 while (bytesRead < contentLength) {
                     val read = inputStream.read(buffer, bytesRead, contentLength - bytesRead)
@@ -557,6 +558,9 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
                 String(buffer, 0, bytesRead, Charsets.UTF_8)
             } else {
                 // Fallback to parseBody for empty or unknown content-length
+                // NOTE: This fallback will use system default charset and may not properly
+                // handle multibyte characters. However, legitimate POST requests from
+                // HTTP clients should always include Content-Length header.
                 val map = mutableMapOf<String, String>()
                 session.parseBody(map)
                 map["postData"] ?: ""
