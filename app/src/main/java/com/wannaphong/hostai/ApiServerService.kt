@@ -90,7 +90,6 @@ class ApiServerService : Service() {
         return try {
             // Start foreground service IMMEDIATELY to prevent Android from killing the service
             // This must be called within 5 seconds on Android O+ or the service will crash
-            // On Android 12+ (API 31+), we also need to handle ForegroundServiceStartNotAllowedException
             val notification = createNotification(port)
             startForeground(NOTIFICATION_ID, notification)
             

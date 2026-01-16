@@ -43,11 +43,6 @@ class MainActivity : AppCompatActivity() {
     private var selectedModelName: String? = null
     private var wasServerRunningBeforeModelChange = false
     
-    companion object {
-        private const val NOTIFICATION_PERMISSION_REQUIRED_MESSAGE = 
-            "Notification permission is required to run the server in the background"
-    }
-    
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             val binder = service as ApiServerService.LocalBinder
@@ -81,7 +76,7 @@ class MainActivity : AppCompatActivity() {
             LogManager.w("MainActivity", "Notification permission denied")
             Toast.makeText(
                 this,
-                NOTIFICATION_PERMISSION_REQUIRED_MESSAGE,
+                getString(R.string.notification_permission_required),
                 Toast.LENGTH_LONG
             ).show()
         }
@@ -173,7 +168,7 @@ class MainActivity : AppCompatActivity() {
                     // Show rationale and request permission
                     Toast.makeText(
                         this,
-                        NOTIFICATION_PERMISSION_REQUIRED_MESSAGE,
+                        getString(R.string.notification_permission_required),
                         Toast.LENGTH_LONG
                     ).show()
                     notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
