@@ -34,6 +34,8 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
         private const val TAG = "OpenAIApiServer"
         // Maximum request body size (10 MB) to prevent memory exhaustion attacks
         private const val MAX_REQUEST_BODY_SIZE = 10 * 1024 * 1024
+        // Stream buffer size (64 KB) for PipedInputStream and BufferedWriter to prevent blocking
+        private const val STREAM_BUFFER_SIZE = 65536
     }
     
     override fun serve(session: IHTTPSession): Response {
@@ -312,14 +314,14 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
         try {
             val pipedOutputStream = PipedOutputStream()
             // Increase buffer size to 64KB to prevent blocking when consumer is slower than producer
-            val pipedInputStream = PipedInputStream(pipedOutputStream, 65536)
+            val pipedInputStream = PipedInputStream(pipedOutputStream, STREAM_BUFFER_SIZE)
             
             // Start streaming in a coroutine
             CoroutineScope(Dispatchers.IO).launch {
                 var streamJob: Job? = null
                 try {
                     // Use larger buffer size for BufferedWriter to match PipedInputStream buffer
-                    val writer = pipedOutputStream.bufferedWriter(Charsets.UTF_8, 65536)
+                    val writer = pipedOutputStream.bufferedWriter(Charsets.UTF_8, STREAM_BUFFER_SIZE)
                     val id = "chatcmpl-${System.currentTimeMillis()}"
                     val created = System.currentTimeMillis() / 1000
                     var tokenCount = 0
@@ -438,14 +440,14 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
         try {
             val pipedOutputStream = PipedOutputStream()
             // Increase buffer size to 64KB to prevent blocking when consumer is slower than producer
-            val pipedInputStream = PipedInputStream(pipedOutputStream, 65536)
+            val pipedInputStream = PipedInputStream(pipedOutputStream, STREAM_BUFFER_SIZE)
             
             // Start streaming in a coroutine
             CoroutineScope(Dispatchers.IO).launch {
                 var streamJob: Job? = null
                 try {
                     // Use larger buffer size for BufferedWriter to match PipedInputStream buffer
-                    val writer = pipedOutputStream.bufferedWriter(Charsets.UTF_8, 65536)
+                    val writer = pipedOutputStream.bufferedWriter(Charsets.UTF_8, STREAM_BUFFER_SIZE)
                     val id = "cmpl-${System.currentTimeMillis()}"
                     val created = System.currentTimeMillis() / 1000
                     var tokenCount = 0
