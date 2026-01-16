@@ -282,7 +282,9 @@ class MainActivity : AppCompatActivity() {
             
             LogManager.i("MainActivity", "Selected file: $fileName (${fileSize / 1024 / 1024} MB)")
             
-            if (fileName == null || !fileName!!.endsWith(".gguf", ignoreCase = true)) {
+            // Validate file name and extension
+            val validFileName = fileName
+            if (validFileName == null || !validFileName.endsWith(".gguf", ignoreCase = true)) {
                 LogManager.w("MainActivity", "Invalid file type selected: $fileName")
                 Toast.makeText(this, "Please select a GGUF model file", Toast.LENGTH_SHORT).show()
                 return
@@ -298,7 +300,7 @@ class MainActivity : AppCompatActivity() {
             
             // Copy file to internal storage
             LogManager.i("MainActivity", "Copying file to internal storage...")
-            val internalFile = File(filesDir, fileName!!)
+            val internalFile = File(filesDir, validFileName)
             contentResolver.openInputStream(uri)?.use { input ->
                 FileOutputStream(internalFile).use { output ->
                     input.copyTo(output)
@@ -306,10 +308,10 @@ class MainActivity : AppCompatActivity() {
             }
             
             selectedModelPath = internalFile.absolutePath
-            selectedModelName = fileName
+            selectedModelName = validFileName
             
             LogManager.i("MainActivity", "Model file copied successfully to: ${internalFile.absolutePath}")
-            Toast.makeText(this, "Model selected: $fileName", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Model selected: $validFileName", Toast.LENGTH_SHORT).show()
             updateUI()
             
         } catch (e: Exception) {

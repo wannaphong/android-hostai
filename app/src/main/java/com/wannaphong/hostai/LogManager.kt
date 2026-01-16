@@ -4,11 +4,10 @@ import android.util.Log
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * Centralized logging manager that collects logs in memory for display in the app.
- * Thread-safe implementation using CopyOnWriteArrayList.
+ * Thread-safe implementation using ArrayDeque with synchronized access.
  */
 object LogManager {
     private const val MAX_LOGS = 1000
