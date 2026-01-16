@@ -33,16 +33,16 @@ jobs:
       - name: Build Release APK
         run: ./gradlew assembleRelease --no-daemon
       
-      - name: Sign Release APK (if keystore available)
-        if: ${{ secrets.KEYSTORE_FILE != '' }}
-        run: |
-          echo "${{ secrets.KEYSTORE_FILE }}" | base64 -d > keystore.jks
-          ./gradlew assembleRelease \
-            -Pandroid.injected.signing.store.file=keystore.jks \
-            -Pandroid.injected.signing.store.password="${{ secrets.KEYSTORE_PASSWORD }}" \
-            -Pandroid.injected.signing.key.alias="${{ secrets.KEY_ALIAS }}" \
-            -Pandroid.injected.signing.key.password="${{ secrets.KEY_PASSWORD }}" \
-            --no-daemon
+      # - name: Sign Release APK (if keystore available)
+      #   if: ${{ secrets.KEYSTORE_FILE != '' }}
+      #   run: |
+      #     echo "${{ secrets.KEYSTORE_FILE }}" | base64 -d > keystore.jks
+      #     ./gradlew assembleRelease \
+      #       -Pandroid.injected.signing.store.file=keystore.jks \
+      #       -Pandroid.injected.signing.store.password="${{ secrets.KEYSTORE_PASSWORD }}" \
+      #       -Pandroid.injected.signing.key.alias="${{ secrets.KEY_ALIAS }}" \
+      #       -Pandroid.injected.signing.key.password="${{ secrets.KEY_PASSWORD }}" \
+      #       --no-daemon
       
       - name: Rename APK files
         run: |
