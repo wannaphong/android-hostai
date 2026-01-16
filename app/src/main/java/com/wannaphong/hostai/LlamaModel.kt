@@ -16,6 +16,34 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 /**
+ * Data class to hold all generation/completion parameters.
+ * These parameters match the kotlinllamacpp library's doCompletion parameters.
+ */
+data class GenerationConfig(
+    val maxTokens: Int = 100,
+    val temperature: Float = 0.7f,
+    val topK: Int = 40,
+    val topP: Float = 0.95f,
+    val minP: Float = 0.05f,
+    val tfsZ: Float = 1.00f,
+    val typicalP: Float = 1.00f,
+    val penaltyLastN: Int = 64,
+    val penaltyRepeat: Float = 1.00f,
+    val penaltyFreq: Float = 0.00f,
+    val penaltyPresent: Float = 0.00f,
+    val mirostat: Float = 0.00f,
+    val mirostatTau: Float = 5.00f,
+    val mirostatEta: Float = 0.10f,
+    val penalizeNl: Boolean = false,
+    val seed: Int = -1,
+    val nProbs: Int = 0,
+    val grammar: String = "",
+    val ignoreEos: Boolean = false,
+    val stopStrings: List<String> = emptyList(),
+    val logitBias: List<List<Double>> = emptyList()
+)
+
+/**
  * LLaMA model interface using kotlinllamacpp library.
  * 
  * This implementation uses the kotlinllamacpp library which provides
@@ -137,7 +165,17 @@ class LlamaModel(private val contentResolver: ContentResolver) {
     
     fun getModelPath(): String? = modelPath
     
-    fun generate(prompt: String, maxTokens: Int = 100, temperature: Float = 0.7f): String {
+    /**
+     * Generate text with full configuration support.
+     * @param prompt The input prompt text
+     * @param config Generation configuration with all parameters (optional)
+     * @return Generated text
+     * 
+     * Note: The underlying kotlinllamacpp LlamaHelper currently has limited parameter support
+     * through its predict() method. This implementation prepares the full parameter set for
+     * when the library extends its API. Currently, only prompt and streaming are directly supported.
+     */
+    fun generate(prompt: String, config: GenerationConfig = GenerationConfig()): String {
         if (!isModelLoaded()) {
             val errorMsg = "Error: Model not loaded. Please load a model first."
             LogManager.e(TAG, errorMsg)
@@ -145,6 +183,7 @@ class LlamaModel(private val contentResolver: ContentResolver) {
         }
         
         LogManager.i(TAG, "Generating response for prompt (length: ${prompt.length})")
+        LogManager.d(TAG, "Config: maxTokens=${config.maxTokens}, temp=${config.temperature}, topK=${config.topK}, topP=${config.topP}")
         
         // For mock model, return a simple response
         if (modelPath == "mock-model") {
@@ -178,6 +217,8 @@ class LlamaModel(private val contentResolver: ContentResolver) {
                 }
                 
                 // Start generation
+                // TODO: When kotlinllamacpp's LlamaHelper supports additional parameters,
+                // pass the full config through the predict method's params parameter
                 llamaHelper.predict(prompt, partialCompletion = true)
                 
                 // Wait for completion (with timeout)
@@ -202,16 +243,37 @@ class LlamaModel(private val contentResolver: ContentResolver) {
         }
     }
     
+    /**
+     * Legacy method for backward compatibility.
+     * @deprecated Use generate(prompt, GenerationConfig) instead
+     */
+    @Deprecated("Use generate(prompt, GenerationConfig) for full parameter control")
+    fun generate(prompt: String, maxTokens: Int = 100, temperature: Float = 0.7f): String {
+        return generate(prompt, GenerationConfig(maxTokens = maxTokens, temperature = temperature))
+    }
+    
+    /**
+     * Generate text with streaming and full configuration support.
+     * @param prompt The input prompt text
+     * @param config Generation configuration with all parameters (optional)
+     * @param onToken Callback for each generated token
+     * @return Job that can be cancelled, or null on error
+     * 
+     * Note: The underlying kotlinllamacpp LlamaHelper currently has limited parameter support
+     * through its predict() method. This implementation prepares the full parameter set for
+     * when the library extends its API. Currently, only prompt and streaming are directly supported.
+     */
     fun generateStream(
         prompt: String,
-        maxTokens: Int = 100,
-        temperature: Float = 0.7f,
+        config: GenerationConfig = GenerationConfig(),
         onToken: (String) -> Unit
     ): Job? {
         if (!isModelLoaded()) {
             onToken("Error: Model not loaded. Please load a model first.")
             return null
         }
+        
+        LogManager.d(TAG, "Streaming config: maxTokens=${config.maxTokens}, temp=${config.temperature}, topK=${config.topK}, topP=${config.topP}")
         
         // For mock model, simulate streaming
         if (modelPath == "mock-model") {
@@ -249,8 +311,24 @@ class LlamaModel(private val contentResolver: ContentResolver) {
             }
         }
         
+        // TODO: When kotlinllamacpp's LlamaHelper supports additional parameters,
+        // pass the full config through the predict method's params parameter
         llamaHelper.predict(prompt, partialCompletion = true)
         return streamJob
+    }
+    
+    /**
+     * Legacy method for backward compatibility.
+     * @deprecated Use generateStream(prompt, GenerationConfig, onToken) instead
+     */
+    @Deprecated("Use generateStream(prompt, GenerationConfig, onToken) for full parameter control")
+    fun generateStream(
+        prompt: String,
+        maxTokens: Int = 100,
+        temperature: Float = 0.7f,
+        onToken: (String) -> Unit
+    ): Job? {
+        return generateStream(prompt, GenerationConfig(maxTokens = maxTokens, temperature = temperature), onToken)
     }
     
     fun unload() {

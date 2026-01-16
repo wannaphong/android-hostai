@@ -24,6 +24,8 @@
     <string name="url_copied">URL copied to clipboard</string>
     <string name="test_server">Test Server</string>
     <string name="view_logs">View Logs</string>
+    <string name="exit_app">Exit App</string>
+    <string name="notification_stop_action">Stop</string>
     <string name="no_logs">No logs available</string>
     <string name="refresh">Refresh</string>
     <string name="copy_logs">Copy Logs</string>

@@ -438,11 +438,76 @@ func main() {
 
 ### Common Parameters
 
+These parameters are extracted from the API request and prepared for the generation engine:
+
 - `model` (string): Model identifier (e.g., "llama-mock-model")
-- `temperature` (float, 0-2): Controls randomness. Lower = more deterministic
-- `max_tokens` (integer): Maximum tokens to generate
-- `top_p` (float, 0-1): Nucleus sampling parameter
+- `temperature` (float, 0-2): Controls randomness. Lower = more deterministic. Default: 0.7
+- `max_tokens` (integer): Maximum tokens to generate. Default: 100
+- `top_p` (float, 0-1): Nucleus sampling parameter. Default: 0.95
+- `top_k` (integer): Top-K sampling parameter. Default: 40
 - `stream` (boolean): Whether to stream the response using Server-Sent Events (SSE). Default: false
+
+**Note:** The HostAI API accepts all parameters listed below and prepares them for the underlying inference engine. The actual parameter support depends on the kotlinllamacpp library implementation. Currently, prompt and streaming are fully supported, with additional parameters prepared for future compatibility.
+
+### Advanced Sampling Parameters
+
+These parameters provide fine-grained control over text generation quality:
+
+- `min_p` (float, 0-1): Minimum probability for a token to be considered. Default: 0.05
+- `tfs_z` (float): Tail-free sampling parameter. Default: 1.00
+- `typical_p` (float, 0-1): Locally typical sampling parameter. Default: 1.00
+- `seed` (integer): Random seed for reproducible generation. Default: -1 (random)
+
+### Penalty Parameters
+
+Control repetition and token selection:
+
+- `penalty_repeat` or `repetition_penalty` (float): Penalize repeated tokens. Default: 1.00
+- `penalty_freq` or `frequency_penalty` (float): Penalize tokens based on frequency. Default: 0.00
+- `penalty_present` or `presence_penalty` (float): Penalize tokens based on presence. Default: 0.00
+- `penalty_last_n` (integer): Number of tokens to consider for repetition penalty. Default: 64
+- `penalize_nl` (boolean): Whether to penalize newline tokens. Default: false
+
+### Mirostat Sampling
+
+Advanced coherence control:
+
+- `mirostat` (float): Mirostat sampling mode (0=disabled, 1=Mirostat, 2=Mirostat 2.0). Default: 0.00
+- `mirostat_tau` (float): Target entropy for Mirostat. Default: 5.00
+- `mirostat_eta` (float): Learning rate for Mirostat. Default: 0.10
+
+### Stop Conditions
+
+- `stop` (string or array of strings): Stop sequences. Generation stops when any of these strings are encountered
+- `ignore_eos` (boolean): Whether to ignore end-of-sequence token. Default: false
+
+### Grammar and Constraints
+
+- `grammar` (string): BNF grammar to constrain output format
+- `logit_bias` (object): Bias specific tokens. Keys are token IDs, values are bias values (-100 to 100)
+- `n_probs` (integer): Number of most likely tokens to return with probabilities. Default: 0
+
+### Example with Advanced Parameters
+
+```bash
+curl http://<phone-ip>:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "llama-mock-model",
+    "messages": [
+      {"role": "user", "content": "Write a creative story"}
+    ],
+    "temperature": 0.8,
+    "max_tokens": 200,
+    "top_p": 0.9,
+    "top_k": 50,
+    "repetition_penalty": 1.1,
+    "frequency_penalty": 0.1,
+    "presence_penalty": 0.1,
+    "stop": ["\n\n", "THE END"],
+    "seed": 42
+  }'
+```
 
 ### Chat Completions Specific
 

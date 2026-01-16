@@ -142,20 +142,21 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel) : Na
         // Extract parameters
         val messages = request.getAsJsonArray("messages")
         val stream = request.get("stream")?.asBoolean ?: false
-        val maxTokens = request.get("max_tokens")?.asInt ?: 100
-        val temperature = request.get("temperature")?.asFloat ?: 0.7f
+        
+        // Build generation config from request parameters
+        val config = extractGenerationConfig(request)
         
         // Build prompt from messages
         val prompt = buildPromptFromMessages(messages)
         
-        LogManager.d(TAG, "Chat completion - stream: $stream, maxTokens: $maxTokens, temp: $temperature")
+        LogManager.d(TAG, "Chat completion - stream: $stream, maxTokens: ${config.maxTokens}, temp: ${config.temperature}")
         
         if (stream) {
-            return handleChatStreamingResponse(prompt, maxTokens, temperature)
+            return handleChatStreamingResponse(prompt, config)
         }
         
         // Generate response
-        val completion = model.generate(prompt, maxTokens, temperature)
+        val completion = model.generate(prompt, config)
         
         val response = mapOf(
             "id" to "chatcmpl-${System.currentTimeMillis()}",
@@ -195,15 +196,16 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel) : Na
         // Extract parameters
         val prompt = request.get("prompt")?.asString ?: ""
         val stream = request.get("stream")?.asBoolean ?: false
-        val maxTokens = request.get("max_tokens")?.asInt ?: 100
-        val temperature = request.get("temperature")?.asFloat ?: 0.7f
+        
+        // Build generation config from request parameters
+        val config = extractGenerationConfig(request)
         
         if (stream) {
-            return handleCompletionStreamingResponse(prompt, maxTokens, temperature)
+            return handleCompletionStreamingResponse(prompt, config)
         }
         
         // Generate response
-        val completion = model.generate(prompt, maxTokens, temperature)
+        val completion = model.generate(prompt, config)
         
         val response = mapOf(
             "id" to "cmpl-${System.currentTimeMillis()}",
@@ -231,7 +233,7 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel) : Na
         )
     }
     
-    private fun handleChatStreamingResponse(prompt: String, maxTokens: Int, temperature: Float): Response {
+    private fun handleChatStreamingResponse(prompt: String, config: GenerationConfig): Response {
         LogManager.i(TAG, "Starting chat streaming response")
         
         try {
@@ -247,7 +249,7 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel) : Na
                     var tokenCount = 0
                     
                     // Start the stream
-                    val streamJob = model.generateStream(prompt, maxTokens, temperature) { token ->
+                    val streamJob = model.generateStream(prompt, config) { token ->
                         try {
                             tokenCount++
                             
@@ -328,7 +330,7 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel) : Na
         }
     }
     
-    private fun handleCompletionStreamingResponse(prompt: String, maxTokens: Int, temperature: Float): Response {
+    private fun handleCompletionStreamingResponse(prompt: String, config: GenerationConfig): Response {
         LogManager.i(TAG, "Starting completion streaming response")
         
         try {
@@ -344,7 +346,7 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel) : Na
                     var tokenCount = 0
                     
                     // Start the stream
-                    val streamJob = model.generateStream(prompt, maxTokens, temperature) { token ->
+                    val streamJob = model.generateStream(prompt, config) { token ->
                         try {
                             tokenCount++
                             
@@ -432,6 +434,72 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel) : Na
             promptBuilder.append("$role: $content\n")
         }
         return promptBuilder.toString()
+    }
+    
+    /**
+     * Extract generation configuration from OpenAI API request.
+     * Supports all parameters from the kotlinllamacpp library.
+     */
+    private fun extractGenerationConfig(request: JsonObject): GenerationConfig {
+        // Extract stop strings array
+        val stopStrings = mutableListOf<String>()
+        request.get("stop")?.let { stopElement ->
+            when {
+                stopElement.isJsonArray -> {
+                    stopElement.asJsonArray.forEach { 
+                        stopStrings.add(it.asString)
+                    }
+                }
+                stopElement.isJsonPrimitive -> {
+                    stopStrings.add(stopElement.asString)
+                }
+            }
+        }
+        
+        // Extract logit_bias if present
+        val logitBias = mutableListOf<List<Double>>()
+        request.get("logit_bias")?.let { logitBiasElement ->
+            if (logitBiasElement.isJsonObject) {
+                // OpenAI format: { "token_id": bias_value }
+                // Convert to list of [token_id, bias_value] pairs
+                logitBiasElement.asJsonObject.entrySet().forEach { entry ->
+                    try {
+                        val tokenId = entry.key.toDouble()
+                        val biasValue = entry.value.asDouble
+                        logitBias.add(listOf(tokenId, biasValue))
+                    } catch (e: Exception) {
+                        LogManager.w(TAG, "Invalid logit_bias entry: ${entry.key}")
+                    }
+                }
+            }
+        }
+        
+        return GenerationConfig(
+            maxTokens = request.get("max_tokens")?.asInt ?: 100,
+            temperature = request.get("temperature")?.asFloat ?: 0.7f,
+            topK = request.get("top_k")?.asInt ?: 40,
+            topP = request.get("top_p")?.asFloat ?: 0.95f,
+            minP = request.get("min_p")?.asFloat ?: 0.05f,
+            tfsZ = request.get("tfs_z")?.asFloat ?: 1.00f,
+            typicalP = request.get("typical_p")?.asFloat ?: 1.00f,
+            penaltyLastN = request.get("penalty_last_n")?.asInt ?: 64,
+            penaltyRepeat = request.get("penalty_repeat")?.asFloat 
+                ?: request.get("repetition_penalty")?.asFloat ?: 1.00f,
+            penaltyFreq = request.get("penalty_freq")?.asFloat 
+                ?: request.get("frequency_penalty")?.asFloat ?: 0.00f,
+            penaltyPresent = request.get("penalty_present")?.asFloat 
+                ?: request.get("presence_penalty")?.asFloat ?: 0.00f,
+            mirostat = request.get("mirostat")?.asFloat ?: 0.00f,
+            mirostatTau = request.get("mirostat_tau")?.asFloat ?: 5.00f,
+            mirostatEta = request.get("mirostat_eta")?.asFloat ?: 0.10f,
+            penalizeNl = request.get("penalize_nl")?.asBoolean ?: false,
+            seed = request.get("seed")?.asInt ?: -1,
+            nProbs = request.get("n_probs")?.asInt ?: 0,
+            grammar = request.get("grammar")?.asString ?: "",
+            ignoreEos = request.get("ignore_eos")?.asBoolean ?: false,
+            stopStrings = stopStrings,
+            logitBias = logitBias
+        )
     }
     
     private fun getRequestBody(session: IHTTPSession): String {

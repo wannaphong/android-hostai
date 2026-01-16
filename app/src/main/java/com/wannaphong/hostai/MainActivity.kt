@@ -102,7 +102,29 @@ class MainActivity : AppCompatActivity() {
             openLogViewer()
         }
         
+        binding.exitButton.setOnClickListener {
+            exitApp()
+        }
+        
         updateUI()
+    }
+    
+    private fun exitApp() {
+        LogManager.i("MainActivity", "User requested to exit app")
+        
+        // Stop server if running
+        if (isServerRunning()) {
+            stopServer()
+        }
+        
+        // Unbind service
+        if (isBound) {
+            unbindService(serviceConnection)
+            isBound = false
+        }
+        
+        // Finish activity and exit
+        finishAffinity()
     }
     
     private fun bindToService() {
@@ -315,11 +337,11 @@ class MainActivity : AppCompatActivity() {
                 return
             }
             
-            // Check file size (limit to 2GB to avoid OOM)
-            val maxFileSize = 2L * 1024 * 1024 * 1024 // 2GB
+            // Check file size (limit to 10GB to avoid OOM)
+            val maxFileSize = 10L * 1024 * 1024 * 1024 // 10GB
             if (fileSize > maxFileSize) {
                 LogManager.w("MainActivity", "File too large: ${fileSize / 1024 / 1024 / 1024} GB")
-                Toast.makeText(this, "File too large. Maximum size is 2GB", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "File too large. Maximum size is 10GB", Toast.LENGTH_LONG).show()
                 return
             }
             
