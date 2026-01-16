@@ -91,6 +91,10 @@ class MainActivity : AppCompatActivity() {
             selectModelFile()
         }
         
+        binding.viewLogsButton.setOnClickListener {
+            openLogViewer()
+        }
+        
         updateUI()
     }
     
@@ -100,11 +104,16 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun startServer() {
+        LogManager.i("MainActivity", "User requested to start server")
+        
         val intent = Intent(this, ApiServerService::class.java).apply {
             action = ApiServerService.ACTION_START
             putExtra(ApiServerService.EXTRA_PORT, ApiServerService.DEFAULT_PORT)
             selectedModelPath?.let { 
+                LogManager.i("MainActivity", "Starting server with model: $selectedModelName")
                 putExtra(ApiServerService.EXTRA_MODEL_PATH, it)
+            } ?: run {
+                LogManager.i("MainActivity", "Starting server with mock model (no model selected)")
             }
         }
         
@@ -121,6 +130,8 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun stopServer() {
+        LogManager.i("MainActivity", "User requested to stop server")
+        
         val intent = Intent(this, ApiServerService::class.java).apply {
             action = ApiServerService.ACTION_STOP
         }
@@ -249,8 +260,15 @@ class MainActivity : AppCompatActivity() {
         filePickerLauncher.launch(intent)
     }
     
+    private fun openLogViewer() {
+        val intent = Intent(this, LogViewerActivity::class.java)
+        startActivity(intent)
+    }
+    
     private fun handleSelectedFile(uri: Uri) {
         try {
+            LogManager.i("MainActivity", "User selected a file")
+            
             // Get file name and size
             var fileName: String? = null
             var fileSize: Long = 0
@@ -262,7 +280,10 @@ class MainActivity : AppCompatActivity() {
                 fileSize = cursor.getLong(sizeIndex)
             }
             
+            LogManager.i("MainActivity", "Selected file: $fileName (${fileSize / 1024 / 1024} MB)")
+            
             if (fileName == null || !fileName!!.endsWith(".gguf", ignoreCase = true)) {
+                LogManager.w("MainActivity", "Invalid file type selected: $fileName")
                 Toast.makeText(this, "Please select a GGUF model file", Toast.LENGTH_SHORT).show()
                 return
             }
@@ -270,11 +291,13 @@ class MainActivity : AppCompatActivity() {
             // Check file size (limit to 2GB to avoid OOM)
             val maxFileSize = 2L * 1024 * 1024 * 1024 // 2GB
             if (fileSize > maxFileSize) {
+                LogManager.w("MainActivity", "File too large: ${fileSize / 1024 / 1024 / 1024} GB")
                 Toast.makeText(this, "File too large. Maximum size is 2GB", Toast.LENGTH_LONG).show()
                 return
             }
             
             // Copy file to internal storage
+            LogManager.i("MainActivity", "Copying file to internal storage...")
             val internalFile = File(filesDir, fileName!!)
             contentResolver.openInputStream(uri)?.use { input ->
                 FileOutputStream(internalFile).use { output ->
@@ -285,10 +308,12 @@ class MainActivity : AppCompatActivity() {
             selectedModelPath = internalFile.absolutePath
             selectedModelName = fileName
             
+            LogManager.i("MainActivity", "Model file copied successfully to: ${internalFile.absolutePath}")
             Toast.makeText(this, "Model selected: $fileName", Toast.LENGTH_SHORT).show()
             updateUI()
             
         } catch (e: Exception) {
+            LogManager.e("MainActivity", "Failed to load model file", e)
             Toast.makeText(this, "Failed to load model: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }

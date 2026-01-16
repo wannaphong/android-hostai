@@ -1,0 +1,105 @@
+package com.wannaphong.hostai
+
+import android.util.Log
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.concurrent.CopyOnWriteArrayList
+
+/**
+ * Centralized logging manager that collects logs in memory for display in the app.
+ * Thread-safe implementation using CopyOnWriteArrayList.
+ */
+object LogManager {
+    private const val MAX_LOGS = 1000
+    private val logs = CopyOnWriteArrayList<LogEntry>()
+    private val dateFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault())
+    
+    data class LogEntry(
+        val timestamp: Long,
+        val level: LogLevel,
+        val tag: String,
+        val message: String
+    ) {
+        fun format(): String {
+            val time = dateFormat.format(Date(timestamp))
+            return "[$time] [${level.name}] [$tag] $message"
+        }
+    }
+    
+    enum class LogLevel {
+        DEBUG, INFO, WARN, ERROR
+    }
+    
+    /**
+     * Log a debug message
+     */
+    fun d(tag: String, message: String) {
+        addLog(LogLevel.DEBUG, tag, message)
+        Log.d(tag, message)
+    }
+    
+    /**
+     * Log an info message
+     */
+    fun i(tag: String, message: String) {
+        addLog(LogLevel.INFO, tag, message)
+        Log.i(tag, message)
+    }
+    
+    /**
+     * Log a warning message
+     */
+    fun w(tag: String, message: String) {
+        addLog(LogLevel.WARN, tag, message)
+        Log.w(tag, message)
+    }
+    
+    /**
+     * Log an error message
+     */
+    fun e(tag: String, message: String, throwable: Throwable? = null) {
+        val fullMessage = if (throwable != null) {
+            "$message\n${throwable.stackTraceToString()}"
+        } else {
+            message
+        }
+        addLog(LogLevel.ERROR, tag, fullMessage)
+        if (throwable != null) {
+            Log.e(tag, message, throwable)
+        } else {
+            Log.e(tag, message)
+        }
+    }
+    
+    private fun addLog(level: LogLevel, tag: String, message: String) {
+        val entry = LogEntry(System.currentTimeMillis(), level, tag, message)
+        logs.add(entry)
+        
+        // Keep only the last MAX_LOGS entries
+        if (logs.size > MAX_LOGS) {
+            logs.removeAt(0)
+        }
+    }
+    
+    /**
+     * Get all logs as a formatted string
+     */
+    fun getAllLogs(): String {
+        return logs.joinToString("\n") { it.format() }
+    }
+    
+    /**
+     * Get all log entries
+     */
+    fun getLogEntries(): List<LogEntry> {
+        return logs.toList()
+    }
+    
+    /**
+     * Clear all logs
+     */
+    fun clearLogs() {
+        logs.clear()
+    }
+}

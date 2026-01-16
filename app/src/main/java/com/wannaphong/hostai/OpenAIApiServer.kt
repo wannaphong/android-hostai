@@ -25,6 +25,8 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel) : Na
         val uri = session.uri
         val method = session.method
         
+        LogManager.d(TAG, "Received ${method.name} request to $uri")
+        
         return try {
             when {
                 uri == "/v1/models" && method == Method.GET -> handleModels()
@@ -32,13 +34,17 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel) : Na
                 uri == "/v1/completions" && method == Method.POST -> handleCompletions(session)
                 uri == "/" && method == Method.GET -> handleRoot()
                 uri == "/health" && method == Method.GET -> handleHealth()
-                else -> newFixedLengthResponse(
-                    Response.Status.NOT_FOUND,
-                    MIME_PLAINTEXT,
-                    "Endpoint not found"
-                )
+                else -> {
+                    LogManager.w(TAG, "Endpoint not found: $uri")
+                    newFixedLengthResponse(
+                        Response.Status.NOT_FOUND,
+                        MIME_PLAINTEXT,
+                        "Endpoint not found"
+                    )
+                }
             }
         } catch (e: Exception) {
+            LogManager.e(TAG, "Error handling request to $uri", e)
             newFixedLengthResponse(
                 Response.Status.INTERNAL_ERROR,
                 "application/json",
@@ -122,6 +128,8 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel) : Na
         val body = getRequestBody(session)
         val request = gson.fromJson(body, JsonObject::class.java)
         
+        LogManager.i(TAG, "Chat completion request received")
+        
         // Extract parameters
         val messages = request.getAsJsonArray("messages")
         val stream = request.get("stream")?.asBoolean ?: false
@@ -130,6 +138,8 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel) : Na
         
         // Build prompt from messages
         val prompt = buildPromptFromMessages(messages)
+        
+        LogManager.d(TAG, "Chat completion - stream: $stream, maxTokens: $maxTokens, temp: $temperature")
         
         if (stream) {
             return handleStreamingResponse(prompt, maxTokens, temperature)
@@ -159,6 +169,8 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel) : Na
                 "total_tokens" to (prompt.split(" ").size + completion.split(" ").size)
             )
         )
+        
+        LogManager.i(TAG, "Chat completion completed successfully")
         
         return newFixedLengthResponse(
             Response.Status.OK,
