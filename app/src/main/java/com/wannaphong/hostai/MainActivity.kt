@@ -37,6 +37,7 @@ class MainActivity : AppCompatActivity() {
     private var isBound = false
     private var selectedModelPath: String? = null
     private var selectedModelName: String? = null
+    private var wasServerRunningBeforeModelChange = false
     
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
@@ -88,7 +89,16 @@ class MainActivity : AppCompatActivity() {
         }
         
         binding.selectModelButton.setOnClickListener {
-            selectModelFile()
+            if (isServerRunning()) {
+                // If server is running, stop it first before allowing model change
+                changeModel()
+            } else {
+                selectModelFile()
+            }
+        }
+        
+        binding.viewLogsButton.setOnClickListener {
+            openLogViewer()
         }
         
         updateUI()
@@ -100,11 +110,16 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun startServer() {
+        LogManager.i("MainActivity", "User requested to start server")
+        
         val intent = Intent(this, ApiServerService::class.java).apply {
             action = ApiServerService.ACTION_START
             putExtra(ApiServerService.EXTRA_PORT, ApiServerService.DEFAULT_PORT)
             selectedModelPath?.let { 
+                LogManager.i("MainActivity", "Starting server with model: $selectedModelName")
                 putExtra(ApiServerService.EXTRA_MODEL_PATH, it)
+            } ?: run {
+                LogManager.i("MainActivity", "Starting server with mock model (no model selected)")
             }
         }
         
@@ -121,6 +136,8 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun stopServer() {
+        LogManager.i("MainActivity", "User requested to stop server")
+        
         val intent = Intent(this, ApiServerService::class.java).apply {
             action = ApiServerService.ACTION_STOP
         }
@@ -156,7 +173,9 @@ class MainActivity : AppCompatActivity() {
             val model = apiServerService?.getLoadedModel()
             val modelName = model?.getModelName() ?: "Unknown"
             binding.modelStatusText.text = getString(R.string.model_loaded, modelName)
-            binding.selectModelButton.isEnabled = false
+            // Enable the button to allow changing model while running
+            binding.selectModelButton.isEnabled = true
+            binding.selectModelButton.text = getString(R.string.change_model)
         } else {
             binding.serverStatusText.text = getString(R.string.server_stopped)
             binding.serverStatusText.setTextColor(Color.RED)
@@ -173,6 +192,7 @@ class MainActivity : AppCompatActivity() {
                 binding.modelStatusText.text = getString(R.string.no_model_selected)
             }
             binding.selectModelButton.isEnabled = true
+            binding.selectModelButton.text = getString(R.string.select_model)
         }
     }
     
@@ -239,6 +259,21 @@ class MainActivity : AppCompatActivity() {
         }
     }
     
+    private fun changeModel() {
+        LogManager.i("MainActivity", "User requested to change model while server is running")
+        
+        // Stop the server first
+        wasServerRunningBeforeModelChange = true
+        stopServer()
+        
+        Toast.makeText(this, R.string.server_stopped_to_change_model, Toast.LENGTH_SHORT).show()
+        
+        // Wait for server to stop, then open file picker
+        binding.root.postDelayed({
+            selectModelFile()
+        }, 500)
+    }
+    
     private fun selectModelFile() {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
@@ -249,8 +284,15 @@ class MainActivity : AppCompatActivity() {
         filePickerLauncher.launch(intent)
     }
     
+    private fun openLogViewer() {
+        val intent = Intent(this, LogViewerActivity::class.java)
+        startActivity(intent)
+    }
+    
     private fun handleSelectedFile(uri: Uri) {
         try {
+            LogManager.i("MainActivity", "User selected a file")
+            
             // Get file name and size
             var fileName: String? = null
             var fileSize: Long = 0
@@ -262,7 +304,12 @@ class MainActivity : AppCompatActivity() {
                 fileSize = cursor.getLong(sizeIndex)
             }
             
-            if (fileName == null || !fileName!!.endsWith(".gguf", ignoreCase = true)) {
+            LogManager.i("MainActivity", "Selected file: $fileName (${fileSize / 1024 / 1024} MB)")
+            
+            // Validate file name and extension
+            val validFileName = fileName
+            if (validFileName == null || !validFileName.endsWith(".gguf", ignoreCase = true)) {
+                LogManager.w("MainActivity", "Invalid file type selected: $fileName")
                 Toast.makeText(this, "Please select a GGUF model file", Toast.LENGTH_SHORT).show()
                 return
             }
@@ -270,12 +317,14 @@ class MainActivity : AppCompatActivity() {
             // Check file size (limit to 2GB to avoid OOM)
             val maxFileSize = 2L * 1024 * 1024 * 1024 // 2GB
             if (fileSize > maxFileSize) {
+                LogManager.w("MainActivity", "File too large: ${fileSize / 1024 / 1024 / 1024} GB")
                 Toast.makeText(this, "File too large. Maximum size is 2GB", Toast.LENGTH_LONG).show()
                 return
             }
             
             // Copy file to internal storage
-            val internalFile = File(filesDir, fileName!!)
+            LogManager.i("MainActivity", "Copying file to internal storage...")
+            val internalFile = File(filesDir, validFileName)
             contentResolver.openInputStream(uri)?.use { input ->
                 FileOutputStream(internalFile).use { output ->
                     input.copyTo(output)
@@ -283,12 +332,23 @@ class MainActivity : AppCompatActivity() {
             }
             
             selectedModelPath = internalFile.absolutePath
-            selectedModelName = fileName
+            selectedModelName = validFileName
             
-            Toast.makeText(this, "Model selected: $fileName", Toast.LENGTH_SHORT).show()
+            LogManager.i("MainActivity", "Model file copied successfully to: ${internalFile.absolutePath}")
+            Toast.makeText(this, "Model selected: $validFileName", Toast.LENGTH_SHORT).show()
             updateUI()
             
+            // If server was running before model change, restart it with the new model
+            if (wasServerRunningBeforeModelChange) {
+                wasServerRunningBeforeModelChange = false
+                LogManager.i("MainActivity", "Restarting server with new model")
+                binding.root.postDelayed({
+                    startServer()
+                }, 500)
+            }
+            
         } catch (e: Exception) {
+            LogManager.e("MainActivity", "Failed to load model file", e)
             Toast.makeText(this, "Failed to load model: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }

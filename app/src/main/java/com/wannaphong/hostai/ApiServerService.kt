@@ -80,19 +80,32 @@ class ApiServerService : Service() {
     
     fun startServer(port: Int = DEFAULT_PORT, modelPath: String = "mock-model"): Boolean {
         if (isRunning) {
+            LogManager.w(TAG, "Server already running")
             return true
         }
         
+        LogManager.i(TAG, "Starting API server on port $port")
+        
         return try {
             // Initialize model with ContentResolver
-            model = LlamaModel(contentResolver).apply {
-                loadModel(modelPath)
+            LogManager.i(TAG, "Initializing model...")
+            val llamaModel = LlamaModel(contentResolver)
+            model = llamaModel
+            
+            // Load the model and check if it succeeded
+            val modelLoaded = llamaModel.loadModel(modelPath)
+            if (!modelLoaded) {
+                LogManager.e(TAG, "Failed to load model. Server will start but model won't be available.")
+                // We still start the server to allow health checks and troubleshooting
             }
             
             // Start API server
-            apiServer = OpenAIApiServer(port, model!!)
+            LogManager.i(TAG, "Starting HTTP server...")
+            apiServer = OpenAIApiServer(port, llamaModel)
             apiServer?.start()
             isRunning = true
+            
+            LogManager.i(TAG, "API server started successfully")
             
             // Start foreground service
             val notification = createNotification(port)
@@ -101,16 +114,19 @@ class ApiServerService : Service() {
             true
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start server", e)
+            LogManager.e(TAG, "Failed to start server", e)
             false
         }
     }
     
     fun stopServer() {
+        LogManager.i(TAG, "Stopping API server")
         apiServer?.stop()
         model?.close()  // Explicitly close to free native resources
         apiServer = null
         model = null
         isRunning = false
+        LogManager.i(TAG, "API server stopped")
     }
     
     fun isServerRunning(): Boolean = isRunning

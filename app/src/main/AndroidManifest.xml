@@ -30,6 +30,12 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".LogViewerActivity"
+            android:exported="false"
+            android:label="Application Logs"
+            android:parentActivityName=".MainActivity" />
+
         <service
             android:name=".ApiServerService"
             android:enabled="true"
