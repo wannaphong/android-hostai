@@ -385,8 +385,32 @@ class OpenAIApiServer(
                     }
                 }
                 
-                // Wait for streaming to complete
-                job?.join()
+                // Wait for streaming to complete, or handle error if job is null
+                if (job != null) {
+                    job.join()
+                } else {
+                    LogManager.e(TAG, "Failed to start streaming: generateStream returned null")
+                    // Write error chunk to client
+                    val errorChunk = mapOf(
+                        "id" to id,
+                        "object" to "chat.completion.chunk",
+                        "created" to created,
+                        "model" to model.getModelName(),
+                        "choices" to listOf(
+                            mapOf(
+                                "index" to 0,
+                                "delta" to mapOf(
+                                    "content" to "Error: Failed to start streaming"
+                                ),
+                                "finish_reason" to "error"
+                            )
+                        )
+                    )
+                    writer.write("data: ${gson.toJson(errorChunk)}\n\n")
+                    writer.write("data: [DONE]\n\n")
+                    writer.flush()
+                    return@respondOutputStream
+                }
                 
                 // Send final chunk with finish_reason
                 val finalChunk = mapOf(
@@ -529,8 +553,30 @@ class OpenAIApiServer(
                     }
                 }
                 
-                // Wait for streaming to complete
-                job?.join()
+                // Wait for streaming to complete, or handle error if job is null
+                if (job != null) {
+                    job.join()
+                } else {
+                    LogManager.e(TAG, "Failed to start streaming: generateStream returned null")
+                    // Write error chunk to client
+                    val errorChunk = mapOf(
+                        "id" to id,
+                        "object" to "text_completion",
+                        "created" to created,
+                        "model" to model.getModelName(),
+                        "choices" to listOf(
+                            mapOf(
+                                "text" to "Error: Failed to start streaming",
+                                "index" to 0,
+                                "finish_reason" to "error"
+                            )
+                        )
+                    )
+                    writer.write("data: ${gson.toJson(errorChunk)}\n\n")
+                    writer.write("data: [DONE]\n\n")
+                    writer.flush()
+                    return@respondOutputStream
+                }
                 
                 // Send final chunk with finish_reason
                 val finalChunk = mapOf(
