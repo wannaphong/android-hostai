@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Primary Colors - Adjusted for dark mode -->
+    <color name="primary">#FF818CF8</color>
+    <color name="primary_variant">#FFA5B4FC</color>
+    <color name="primary_dark">#FF6366F1</color>
+    
+    <!-- Secondary Colors - Brighter for dark mode -->
+    <color name="secondary">#FF2DD4BF</color>
+    <color name="secondary_variant">#FF5EEAD4</color>
+    
+    <!-- Background Colors - Dark Mode -->
+    <color name="background">#FF111827</color>
+    <color name="surface">#FF1F2937</color>
+    <color name="surface_variant">#FF374151</color>
+    
+    <!-- Text Colors - Dark Mode -->
+    <color name="on_primary">#FF000000</color>
+    <color name="on_secondary">#FF000000</color>
+    <color name="on_background">#FFF9FAFB</color>
+    <color name="on_surface">#FFF3F4F6</color>
+    <color name="on_surface_variant">#FF9CA3AF</color>
+    
+    <!-- Status Colors - Adjusted for dark mode visibility -->
+    <color name="success">#FF34D399</color>
+    <color name="error">#FFF87171</color>
+    <color name="warning">#FFFBBF24</color>
+    <color name="info">#FF60A5FA</color>
+    
+    <!-- Legacy support -->
+    <color name="green">#FF34D399</color>
+    <color name="red">#FFF87171</color>
+</resources>

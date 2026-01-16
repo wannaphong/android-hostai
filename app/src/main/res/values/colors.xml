@@ -1,12 +1,40 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Primary Colors - Modern Blue-Purple palette -->
+    <color name="primary">#FF6366F1</color>
+    <color name="primary_variant">#FF4F46E5</color>
+    <color name="primary_dark">#FF4338CA</color>
+    
+    <!-- Secondary Colors - Complementary Teal -->
+    <color name="secondary">#FF14B8A6</color>
+    <color name="secondary_variant">#FF0D9488</color>
+    
+    <!-- Background Colors - Light Mode -->
+    <color name="background">#FFF9FAFB</color>
+    <color name="surface">#FFFFFFFF</color>
+    <color name="surface_variant">#FFF3F4F6</color>
+    
+    <!-- Text Colors - Light Mode -->
+    <color name="on_primary">#FFFFFFFF</color>
+    <color name="on_secondary">#FFFFFFFF</color>
+    <color name="on_background">#FF111827</color>
+    <color name="on_surface">#FF1F2937</color>
+    <color name="on_surface_variant">#FF6B7280</color>
+    
+    <!-- Status Colors -->
+    <color name="success">#FF10B981</color>
+    <color name="error">#FFEF4444</color>
+    <color name="warning">#FFF59E0B</color>
+    <color name="info">#FF3B82F6</color>
+    
+    <!-- Legacy support -->
     <color name="purple_200">#FFBB86FC</color>
-    <color name="purple_500">#FF6200EE</color>
-    <color name="purple_700">#FF3700B3</color>
-    <color name="teal_200">#FF03DAC5</color>
-    <color name="teal_700">#FF018786</color>
+    <color name="purple_500">#FF6366F1</color>
+    <color name="purple_700">#FF4338CA</color>
+    <color name="teal_200">#FF5EEAD4</color>
+    <color name="teal_700">#FF0D9488</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
-    <color name="green">#FF4CAF50</color>
-    <color name="red">#FFF44336</color>
+    <color name="green">#FF10B981</color>
+    <color name="red">#FFEF4444</color>
 </resources>

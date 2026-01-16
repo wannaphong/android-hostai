@@ -7,7 +7,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
-import android.graphics.Color
+import android.content.res.Configuration
 import android.net.ConnectivityManager
 import android.net.Uri
 import android.net.wifi.WifiManager
@@ -20,6 +20,7 @@ import android.view.View
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.wannaphong.hostai.databinding.ActivityMainBinding
 import kotlinx.coroutines.CoroutineScope
@@ -180,7 +181,7 @@ class MainActivity : AppCompatActivity() {
         
         if (isRunning) {
             binding.serverStatusText.text = getString(R.string.server_running)
-            binding.serverStatusText.setTextColor(Color.GREEN)
+            binding.serverStatusText.setTextColor(ContextCompat.getColor(this, R.color.green))
             binding.startStopButton.text = getString(R.string.stop_server)
             
             val ipAddress = getLocalIpAddress()
@@ -201,7 +202,7 @@ class MainActivity : AppCompatActivity() {
             binding.selectModelButton.text = getString(R.string.change_model)
         } else {
             binding.serverStatusText.text = getString(R.string.server_stopped)
-            binding.serverStatusText.setTextColor(Color.RED)
+            binding.serverStatusText.setTextColor(ContextCompat.getColor(this, R.color.red))
             binding.startStopButton.text = getString(R.string.start_server)
             
             binding.serverUrlLabel.visibility = View.GONE
