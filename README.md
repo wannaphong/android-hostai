@@ -26,6 +26,8 @@ The server implements the following OpenAI-compatible endpoints:
 
 - Android Studio (2022.3 or later)
 - Android SDK (API level 24+)
+- Android NDK (for native code compilation)
+- CMake 3.22.1 or later
 - JDK 8 or higher
 
 ### Build Instructions
@@ -36,17 +38,25 @@ The server implements the following OpenAI-compatible endpoints:
    cd android-hostai
    ```
 
-2. Open the project in Android Studio
+2. **Complete llama.cpp integration** (see [INTEGRATION_GUIDE.md](INTEGRATION_GUIDE.md)):
+   ```bash
+   ./add_llama_cpp.sh
+   ```
+   Or follow manual steps in the integration guide.
 
-3. Build the project:
+3. Open the project in Android Studio
+
+4. Build the project:
    ```bash
    ./gradlew assembleDebug
    ```
 
-4. Install on device:
+5. Install on device:
    ```bash
    ./gradlew installDebug
    ```
+
+For detailed llama.cpp integration instructions, see **[INTEGRATION_GUIDE.md](INTEGRATION_GUIDE.md)**.
 
 ## Usage
 
