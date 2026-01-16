@@ -1,5 +1,6 @@
 package com.wannaphong.hostai
 
+import android.Manifest
 import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -7,6 +8,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.net.ConnectivityManager
 import android.net.Uri
@@ -61,6 +63,22 @@ class MainActivity : AppCompatActivity() {
             result.data?.data?.let { uri ->
                 handleSelectedFile(uri)
             }
+        }
+    }
+    
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            LogManager.i("MainActivity", "Notification permission granted")
+            proceedToStartServer()
+        } else {
+            LogManager.w("MainActivity", "Notification permission denied")
+            Toast.makeText(
+                this,
+                getString(R.string.notification_permission_required),
+                Toast.LENGTH_LONG
+            ).show()
         }
     }
     
@@ -135,6 +153,43 @@ class MainActivity : AppCompatActivity() {
     
     private fun startServer() {
         LogManager.i("MainActivity", "User requested to start server")
+        
+        // Check for notification permission on Android 13+ (API 33+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            when {
+                ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) == PackageManager.PERMISSION_GRANTED -> {
+                    // Permission already granted
+                    proceedToStartServer()
+                }
+                shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS) -> {
+                    // Show rationale and request permission
+                    Toast.makeText(
+                        this,
+                        getString(R.string.notification_permission_required),
+                        Toast.LENGTH_LONG
+                    ).show()
+                    requestNotificationPermission()
+                }
+                else -> {
+                    // Request permission directly
+                    requestNotificationPermission()
+                }
+            }
+        } else {
+            // No permission needed for older Android versions
+            proceedToStartServer()
+        }
+    }
+    
+    private fun requestNotificationPermission() {
+        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+    
+    private fun proceedToStartServer() {
+        LogManager.i("MainActivity", "Proceeding to start server")
         
         val intent = Intent(this, ApiServerService::class.java).apply {
             action = ApiServerService.ACTION_START
