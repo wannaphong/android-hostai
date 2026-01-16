@@ -55,6 +55,21 @@ class OpenAIApiServer(
         LogManager.i(TAG, "Ktor server stopped")
     }
     
+    /**
+     * Safely receive request body with size limits to prevent memory exhaustion attacks.
+     */
+    private suspend fun ApplicationCall.receiveTextWithSizeLimit(): String {
+        val contentLength = request.headers[HttpHeaders.ContentLength]?.toLongOrNull()
+        
+        // Security: Check content length before reading
+        if (contentLength != null && contentLength > MAX_REQUEST_BODY_SIZE) {
+            LogManager.w(TAG, "Request body too large: $contentLength bytes (max: $MAX_REQUEST_BODY_SIZE)")
+            throw IOException("Request body too large")
+        }
+        
+        return receiveText()
+    }
+    
     private fun Application.configureRouting() {
         routing {
             // Health check
@@ -241,7 +256,7 @@ class OpenAIApiServer(
         LogManager.d(TAG, "Received POST request to /v1/chat/completions")
         
         try {
-            val bodyText = call.receiveText()
+            val bodyText = call.receiveTextWithSizeLimit()
             val request = gson.fromJson(bodyText, JsonObject::class.java)
             
             LogManager.i(TAG, "Chat completion request received")
@@ -401,7 +416,7 @@ class OpenAIApiServer(
         LogManager.d(TAG, "Received POST request to /v1/completions")
         
         try {
-            val bodyText = call.receiveText()
+            val bodyText = call.receiveTextWithSizeLimit()
             val request = gson.fromJson(bodyText, JsonObject::class.java)
             
             // Extract parameters
