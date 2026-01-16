@@ -39,10 +39,20 @@
         app:layout_constraintEnd_toEndOf="parent">
 
         <com.google.android.material.button.MaterialButton
+            android:id="@+id/clearLogsButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginEnd="4dp"
+            android:text="@string/clear_logs"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
+
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/refreshButton"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
+            android:layout_marginStart="4dp"
             android:layout_marginEnd="4dp"
             android:text="@string/refresh"
             style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
@@ -53,17 +63,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:layout_marginStart="4dp"
-            android:layout_marginEnd="4dp"
             android:text="@string/copy_logs"
-            style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/clearLogsButton"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:layout_marginStart="4dp"
-            android:text="@string/clear_logs"
             style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
     </LinearLayout>
 
