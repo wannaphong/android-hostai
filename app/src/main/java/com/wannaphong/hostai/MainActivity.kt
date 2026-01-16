@@ -251,16 +251,26 @@ class MainActivity : AppCompatActivity() {
     
     private fun handleSelectedFile(uri: Uri) {
         try {
-            // Get file name
+            // Get file name and size
             var fileName: String? = null
+            var fileSize: Long = 0
             contentResolver.query(uri, null, null, null, null)?.use { cursor ->
                 val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
                 cursor.moveToFirst()
                 fileName = cursor.getString(nameIndex)
+                fileSize = cursor.getLong(sizeIndex)
             }
             
             if (fileName == null || !fileName!!.endsWith(".gguf", ignoreCase = true)) {
                 Toast.makeText(this, "Please select a GGUF model file", Toast.LENGTH_SHORT).show()
+                return
+            }
+            
+            // Check file size (limit to 2GB to avoid OOM)
+            val maxFileSize = 2L * 1024 * 1024 * 1024 // 2GB
+            if (fileSize > maxFileSize) {
+                Toast.makeText(this, "File too large. Maximum size is 2GB", Toast.LENGTH_LONG).show()
                 return
             }
             
