@@ -87,13 +87,23 @@ class ApiServerService : Service() {
         
         LogManager.i(TAG, "Starting API server on port $port")
         
-        return try {
-            // Start foreground service IMMEDIATELY to prevent Android from killing the service
-            // This must be called within 5 seconds on Android O+ or the service will crash
+        // Start foreground service IMMEDIATELY to prevent Android from killing the service
+        // This must be called within 5 seconds on Android O+ or the service will crash
+        // We MUST call this before any potentially slow or error-prone operations
+        try {
             val notification = createNotification(port)
             startForeground(NOTIFICATION_ID, notification)
-            
-            // Now we can safely do heavy operations like model loading
+            LogManager.i(TAG, "Foreground service started successfully")
+        } catch (e: Exception) {
+            // If we can't even start foreground, we should fail immediately
+            Log.e(TAG, "Failed to start foreground service", e)
+            LogManager.e(TAG, "Failed to start foreground service", e)
+            return false
+        }
+        
+        // Now we can safely do heavy operations like model loading
+        // If these fail, the service will still be running in foreground
+        return try {
             // Initialize model with ContentResolver
             LogManager.i(TAG, "Initializing model...")
             val llamaModel = LlamaModel(contentResolver)
@@ -118,16 +128,13 @@ class ApiServerService : Service() {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start server", e)
             LogManager.e(TAG, "Failed to start server", e)
-            // Make sure we stop foreground if we failed after starting it
+            // Clean up foreground service if server failed to start
             try {
                 stopForeground(true)
-            } catch (ex: IllegalStateException) {
-                // Ignore IllegalStateException if service wasn't actually in foreground state
-                LogManager.w(TAG, "Service was not in foreground state: ${ex.message}")
             } catch (ex: Exception) {
-                // Log any other unexpected errors
-                LogManager.w(TAG, "Unexpected error stopping foreground service: ${ex.message}")
+                LogManager.w(TAG, "Error stopping foreground service: ${ex.message}")
             }
+            isRunning = false
             false
         }
     }
