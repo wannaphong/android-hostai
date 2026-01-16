@@ -376,11 +376,10 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
             }
             
             // Return response with text/event-stream content type
-            val response = newFixedLengthResponse(
+            val response = newChunkedResponse(
                 Response.Status.OK,
                 "text/event-stream",
-                pipedInputStream,
-                -1 // Unknown length for streaming
+                pipedInputStream
             )
             response.addHeader("Cache-Control", "no-cache")
             response.addHeader("Connection", "keep-alive")
@@ -471,11 +470,10 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
             }
             
             // Return response with text/event-stream content type
-            val response = newFixedLengthResponse(
+            val response = newChunkedResponse(
                 Response.Status.OK,
                 "text/event-stream",
-                pipedInputStream,
-                -1 // Unknown length for streaming
+                pipedInputStream
             )
             response.addHeader("Cache-Control", "no-cache")
             response.addHeader("Connection", "keep-alive")
