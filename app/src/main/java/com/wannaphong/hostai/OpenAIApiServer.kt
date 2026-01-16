@@ -30,6 +30,8 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
     
     companion object {
         private const val TAG = "OpenAIApiServer"
+        // Maximum request body size (10 MB) to prevent memory exhaustion attacks
+        private const val MAX_REQUEST_BODY_SIZE = 10 * 1024 * 1024
     }
     
     override fun serve(session: IHTTPSession): Response {
@@ -524,14 +526,25 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
             val contentLength = session.headers["content-length"]?.toIntOrNull() ?: 0
             
             if (contentLength > 0) {
+                // Security: Prevent memory exhaustion attacks by limiting request body size
+                if (contentLength > MAX_REQUEST_BODY_SIZE) {
+                    LogManager.w(TAG, "Request body too large: $contentLength bytes (max: $MAX_REQUEST_BODY_SIZE)")
+                    throw IOException("Request body too large")
+                }
+                
                 // Read the request body directly from input stream with UTF-8
                 val buffer = ByteArray(contentLength)
                 var bytesRead = 0
                 val inputStream = session.inputStream
                 
+                // Read until we have all the bytes or reach EOF
                 while (bytesRead < contentLength) {
                     val read = inputStream.read(buffer, bytesRead, contentLength - bytesRead)
-                    if (read == -1) break
+                    if (read == -1) {
+                        // Reached EOF before reading all expected bytes
+                        LogManager.w(TAG, "Incomplete request body: expected $contentLength bytes, got $bytesRead")
+                        break
+                    }
                     bytesRead += read
                 }
                 
