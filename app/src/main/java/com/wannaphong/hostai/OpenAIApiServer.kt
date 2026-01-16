@@ -311,13 +311,15 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
         
         try {
             val pipedOutputStream = PipedOutputStream()
-            val pipedInputStream = PipedInputStream(pipedOutputStream)
+            // Increase buffer size to 64KB to prevent blocking when consumer is slower than producer
+            val pipedInputStream = PipedInputStream(pipedOutputStream, 65536)
             
             // Start streaming in a coroutine
             CoroutineScope(Dispatchers.IO).launch {
                 var streamJob: Job? = null
                 try {
-                    val writer = pipedOutputStream.bufferedWriter()
+                    // Use larger buffer size for BufferedWriter to match PipedInputStream buffer
+                    val writer = pipedOutputStream.bufferedWriter(Charsets.UTF_8, 65536)
                     val id = "chatcmpl-${System.currentTimeMillis()}"
                     val created = System.currentTimeMillis() / 1000
                     var tokenCount = 0
@@ -435,13 +437,15 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
         
         try {
             val pipedOutputStream = PipedOutputStream()
-            val pipedInputStream = PipedInputStream(pipedOutputStream)
+            // Increase buffer size to 64KB to prevent blocking when consumer is slower than producer
+            val pipedInputStream = PipedInputStream(pipedOutputStream, 65536)
             
             // Start streaming in a coroutine
             CoroutineScope(Dispatchers.IO).launch {
                 var streamJob: Job? = null
                 try {
-                    val writer = pipedOutputStream.bufferedWriter()
+                    // Use larger buffer size for BufferedWriter to match PipedInputStream buffer
+                    val writer = pipedOutputStream.bufferedWriter(Charsets.UTF_8, 65536)
                     val id = "cmpl-${System.currentTimeMillis()}"
                     val created = System.currentTimeMillis() / 1000
                     var tokenCount = 0
