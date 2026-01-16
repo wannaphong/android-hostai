@@ -1,5 +1,7 @@
 package com.wannaphong.hostai
 
+import java.io.File
+
 /**
  * Mock implementation of LLaMA model interface.
  * In a production app, this would interface with actual llama.cpp native code via JNI.
@@ -7,9 +9,20 @@ package com.wannaphong.hostai
 class LlamaModel {
     private var isLoaded = false
     private var modelName = "llama-mock-model"
+    private var modelPath: String? = null
     
     fun loadModel(modelPath: String): Boolean {
         // Mock implementation - in real app, this would load the GGUF model via JNI
+        this.modelPath = modelPath
+        
+        // Extract model name from file path
+        if (modelPath != "mock-model") {
+            val file = File(modelPath)
+            if (file.exists()) {
+                modelName = file.name
+            }
+        }
+        
         isLoaded = true
         return true
     }
@@ -17,6 +30,8 @@ class LlamaModel {
     fun isModelLoaded(): Boolean = isLoaded
     
     fun getModelName(): String = modelName
+    
+    fun getModelPath(): String? = modelPath
     
     fun generate(prompt: String, maxTokens: Int = 100, temperature: Float = 0.7f): String {
         // Mock implementation - returns a simulated response
@@ -43,5 +58,6 @@ class LlamaModel {
     
     fun unload() {
         isLoaded = false
+        modelPath = null
     }
 }

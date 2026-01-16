@@ -10,6 +10,9 @@
     <string name="model_status">Model Status</string>
     <string name="model_not_loaded">No model loaded</string>
     <string name="model_loaded">Model loaded: %s</string>
+    <string name="select_model">Select GGUF Model</string>
+    <string name="model_selected">Model selected: %s</string>
+    <string name="no_model_selected">No model file selected</string>
     <string name="server_info">OpenAI-Compatible API Server\n\nEndpoints:\n• /v1/chat/completions\n• /v1/completions\n• /v1/models</string>
     <string name="notification_channel_name">API Server</string>
     <string name="notification_channel_desc">Shows when API server is running</string>

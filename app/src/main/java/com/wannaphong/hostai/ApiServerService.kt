@@ -32,6 +32,7 @@ class ApiServerService : Service() {
         const val ACTION_START = "com.wannaphong.hostai.ACTION_START"
         const val ACTION_STOP = "com.wannaphong.hostai.ACTION_STOP"
         const val EXTRA_PORT = "port"
+        const val EXTRA_MODEL_PATH = "model_path"
     }
     
     inner class LocalBinder : Binder() {
@@ -51,7 +52,8 @@ class ApiServerService : Service() {
         when (intent?.action) {
             ACTION_START -> {
                 val port = intent.getIntExtra(EXTRA_PORT, DEFAULT_PORT)
-                startServer(port)
+                val modelPath = intent.getStringExtra(EXTRA_MODEL_PATH) ?: "mock-model"
+                startServer(port, modelPath)
             }
             ACTION_STOP -> {
                 stopServer()
@@ -76,7 +78,7 @@ class ApiServerService : Service() {
         }
     }
     
-    fun startServer(port: Int = DEFAULT_PORT): Boolean {
+    fun startServer(port: Int = DEFAULT_PORT, modelPath: String = "mock-model"): Boolean {
         if (isRunning) {
             return true
         }
@@ -84,7 +86,7 @@ class ApiServerService : Service() {
         return try {
             // Initialize model
             model = LlamaModel().apply {
-                loadModel("mock-model") // In production, load actual model file
+                loadModel(modelPath)
             }
             
             // Start API server
@@ -114,6 +116,8 @@ class ApiServerService : Service() {
     fun isServerRunning(): Boolean = isRunning
     
     fun getServerPort(): Int = DEFAULT_PORT
+    
+    fun getLoadedModel(): LlamaModel? = model
     
     private fun createNotification(port: Int): Notification {
         val intent = Intent(this, MainActivity::class.java)

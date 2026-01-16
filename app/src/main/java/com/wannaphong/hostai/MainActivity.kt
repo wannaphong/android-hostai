@@ -1,5 +1,6 @@
 package com.wannaphong.hostai
 
+import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.ComponentName
@@ -8,19 +9,24 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.graphics.Color
 import android.net.ConnectivityManager
+import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.provider.OpenableColumns
 import android.text.format.Formatter
 import android.view.View
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import com.wannaphong.hostai.databinding.ActivityMainBinding
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -29,6 +35,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private var apiServerService: ApiServerService? = null
     private var isBound = false
+    private var selectedModelPath: String? = null
+    private var selectedModelName: String? = null
     
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
@@ -42,6 +50,14 @@ class MainActivity : AppCompatActivity() {
             apiServerService = null
             isBound = false
             updateUI()
+        }
+    }
+    
+    private val filePickerLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            result.data?.data?.let { uri ->
+                handleSelectedFile(uri)
+            }
         }
     }
     
@@ -71,6 +87,10 @@ class MainActivity : AppCompatActivity() {
             testServer()
         }
         
+        binding.selectModelButton.setOnClickListener {
+            selectModelFile()
+        }
+        
         updateUI()
     }
     
@@ -83,6 +103,9 @@ class MainActivity : AppCompatActivity() {
         val intent = Intent(this, ApiServerService::class.java).apply {
             action = ApiServerService.ACTION_START
             putExtra(ApiServerService.EXTRA_PORT, ApiServerService.DEFAULT_PORT)
+            selectedModelPath?.let { 
+                putExtra(ApiServerService.EXTRA_MODEL_PATH, it)
+            }
         }
         
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -130,7 +153,10 @@ class MainActivity : AppCompatActivity() {
             binding.copyUrlButton.visibility = View.VISIBLE
             binding.testServerButton.visibility = View.VISIBLE
             
-            binding.modelStatusText.text = getString(R.string.model_loaded, "Mock LLaMA Model")
+            val model = apiServerService?.getLoadedModel()
+            val modelName = model?.getModelName() ?: "Unknown"
+            binding.modelStatusText.text = getString(R.string.model_loaded, modelName)
+            binding.selectModelButton.isEnabled = false
         } else {
             binding.serverStatusText.text = getString(R.string.server_stopped)
             binding.serverStatusText.setTextColor(Color.RED)
@@ -141,7 +167,12 @@ class MainActivity : AppCompatActivity() {
             binding.copyUrlButton.visibility = View.GONE
             binding.testServerButton.visibility = View.GONE
             
-            binding.modelStatusText.text = getString(R.string.model_not_loaded)
+            if (selectedModelName != null) {
+                binding.modelStatusText.text = getString(R.string.model_selected, selectedModelName)
+            } else {
+                binding.modelStatusText.text = getString(R.string.no_model_selected)
+            }
+            binding.selectModelButton.isEnabled = true
         }
     }
     
@@ -205,6 +236,50 @@ class MainActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 Toast.makeText(this@MainActivity, "Server test failed: ${e.message}", Toast.LENGTH_LONG).show()
             }
+        }
+    }
+    
+    private fun selectModelFile() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            // Filter for .gguf files
+            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("*/*"))
+        }
+        filePickerLauncher.launch(intent)
+    }
+    
+    private fun handleSelectedFile(uri: Uri) {
+        try {
+            // Get file name
+            var fileName: String? = null
+            contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                cursor.moveToFirst()
+                fileName = cursor.getString(nameIndex)
+            }
+            
+            if (fileName == null || !fileName!!.endsWith(".gguf", ignoreCase = true)) {
+                Toast.makeText(this, "Please select a GGUF model file", Toast.LENGTH_SHORT).show()
+                return
+            }
+            
+            // Copy file to internal storage
+            val internalFile = File(filesDir, fileName!!)
+            contentResolver.openInputStream(uri)?.use { input ->
+                FileOutputStream(internalFile).use { output ->
+                    input.copyTo(output)
+                }
+            }
+            
+            selectedModelPath = internalFile.absolutePath
+            selectedModelName = fileName
+            
+            Toast.makeText(this, "Model selected: $fileName", Toast.LENGTH_SHORT).show()
+            updateUI()
+            
+        } catch (e: Exception) {
+            Toast.makeText(this, "Failed to load model: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
     

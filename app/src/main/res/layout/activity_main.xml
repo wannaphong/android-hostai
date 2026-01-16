@@ -115,6 +115,14 @@
                 android:text="@string/model_not_loaded"
                 android:textSize="14sp"
                 android:layout_marginTop="8dp" />
+
+            <Button
+                android:id="@+id/selectModelButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/select_model"
+                android:layout_marginTop="8dp"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
 
