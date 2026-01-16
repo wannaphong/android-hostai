@@ -144,6 +144,16 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
             // Remove "/assets/" prefix to get the actual file name
             val fileName = uri.removePrefix("/assets/")
             
+            // Security: Prevent path traversal attacks
+            if (fileName.contains("..") || fileName.startsWith("/") || fileName.contains("\\")) {
+                LogManager.w(TAG, "Rejected potential path traversal attempt: $uri")
+                return newFixedLengthResponse(
+                    Response.Status.FORBIDDEN,
+                    MIME_PLAINTEXT,
+                    "Invalid asset path"
+                )
+            }
+            
             // Determine MIME type based on file extension
             val mimeType = when {
                 fileName.endsWith(".ico") -> "image/x-icon"
@@ -155,7 +165,10 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
             }
             
             val inputStream = context.assets.open(fileName)
-            newFixedLengthResponse(Response.Status.OK, mimeType, inputStream, inputStream.available().toLong())
+            val bytes = inputStream.readBytes()
+            inputStream.close()
+            
+            newFixedLengthResponse(Response.Status.OK, mimeType, bytes.inputStream(), bytes.size.toLong())
         } catch (e: Exception) {
             LogManager.e(TAG, "Error loading asset: $uri", e)
             newFixedLengthResponse(
