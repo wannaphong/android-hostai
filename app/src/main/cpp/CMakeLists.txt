@@ -29,6 +29,7 @@ set(LLAMA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp)
 include_directories(${LLAMA_DIR})
 include_directories(${LLAMA_DIR}/include)
 include_directories(${LLAMA_DIR}/ggml/include)
+include_directories(${LLAMA_DIR}/ggml/src)
 include_directories(${LLAMA_DIR}/src)
 
 # Add ggml sources
