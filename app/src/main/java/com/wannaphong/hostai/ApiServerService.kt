@@ -89,10 +89,11 @@ class ApiServerService : Service() {
         return try {
             // Initialize model with ContentResolver
             LogManager.i(TAG, "Initializing model...")
-            model = LlamaModel(contentResolver)
+            val llamaModel = LlamaModel(contentResolver)
+            model = llamaModel
             
             // Load the model and check if it succeeded
-            val modelLoaded = model!!.loadModel(modelPath)
+            val modelLoaded = llamaModel.loadModel(modelPath)
             if (!modelLoaded) {
                 LogManager.e(TAG, "Failed to load model. Server will start but model won't be available.")
                 // We still start the server to allow health checks and troubleshooting
@@ -100,7 +101,7 @@ class ApiServerService : Service() {
             
             // Start API server
             LogManager.i(TAG, "Starting HTTP server...")
-            apiServer = OpenAIApiServer(port, model!!)
+            apiServer = OpenAIApiServer(port, llamaModel)
             apiServer?.start()
             isRunning = true
             

@@ -12,8 +12,11 @@ import java.util.concurrent.CopyOnWriteArrayList
  */
 object LogManager {
     private const val MAX_LOGS = 1000
-    private val logs = CopyOnWriteArrayList<LogEntry>()
+    private val logs = ArrayDeque<LogEntry>(MAX_LOGS)
     private val dateFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault())
+    
+    // Synchronize access to logs for thread safety
+    private val lock = Any()
     
     data class LogEntry(
         val timestamp: Long,
@@ -73,12 +76,14 @@ object LogManager {
     }
     
     private fun addLog(level: LogLevel, tag: String, message: String) {
-        val entry = LogEntry(System.currentTimeMillis(), level, tag, message)
-        logs.add(entry)
-        
-        // Keep only the last MAX_LOGS entries
-        if (logs.size > MAX_LOGS) {
-            logs.removeAt(0)
+        synchronized(lock) {
+            val entry = LogEntry(System.currentTimeMillis(), level, tag, message)
+            logs.add(entry)
+            
+            // Keep only the last MAX_LOGS entries
+            if (logs.size > MAX_LOGS) {
+                logs.removeFirst()
+            }
         }
     }
     
@@ -86,20 +91,26 @@ object LogManager {
      * Get all logs as a formatted string
      */
     fun getAllLogs(): String {
-        return logs.joinToString("\n") { it.format() }
+        synchronized(lock) {
+            return logs.joinToString("\n") { it.format() }
+        }
     }
     
     /**
      * Get all log entries
      */
     fun getLogEntries(): List<LogEntry> {
-        return logs.toList()
+        synchronized(lock) {
+            return logs.toList()
+        }
     }
     
     /**
      * Clear all logs
      */
     fun clearLogs() {
-        logs.clear()
+        synchronized(lock) {
+            logs.clear()
+        }
     }
 }
