@@ -1,7 +1,6 @@
 package com.wannaphong.hostai
 
 import android.content.Context
-import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonObject
@@ -9,7 +8,6 @@ import fi.iki.elonen.NanoHTTPD
 import kotlinx.coroutines.*
 import java.io.ByteArrayInputStream
 import java.io.IOException
-import java.io.InputStream
 import java.io.PipedInputStream
 import java.io.PipedOutputStream
 
@@ -645,17 +643,27 @@ class OpenAIApiServer(
      * Safely receive request body with size limits to prevent memory exhaustion attacks.
      */
     private fun getRequestBody(session: IHTTPSession): String {
-        val contentLength = session.headers["content-length"]?.toLongOrNull() ?: 0L
+        val contentLength = session.headers["content-length"]?.toLongOrNull()
         
         // Security: Check content length before reading
-        if (contentLength > MAX_REQUEST_BODY_SIZE) {
+        // If content-length header is present and exceeds limit, reject immediately
+        if (contentLength != null && contentLength > MAX_REQUEST_BODY_SIZE) {
             LogManager.w(TAG, "Request body too large: $contentLength bytes (max: $MAX_REQUEST_BODY_SIZE)")
             throw IOException("Request body too large")
         }
         
+        // Parse body - NanoHTTPD handles reading and temporary file storage
         val files = mutableMapOf<String, String>()
         session.parseBody(files)
         
-        return files["postData"] ?: ""
+        val postData = files["postData"] ?: ""
+        
+        // Additional safety check on actual data size
+        if (postData.length > MAX_REQUEST_BODY_SIZE) {
+            LogManager.w(TAG, "Parsed body too large: ${postData.length} bytes (max: $MAX_REQUEST_BODY_SIZE)")
+            throw IOException("Request body too large")
+        }
+        
+        return postData
     }
 }
