@@ -18,6 +18,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -220,7 +221,15 @@ class LlamaModel(private val contentResolver: ContentResolver) {
                 
                 // Use suspendCancellableCoroutine to wait for async callback to complete
                 suspendCancellableCoroutine<Unit> { continuation ->
-                    var resumed = false
+                    val resumed = AtomicBoolean(false)
+                    
+                    // Check if conversation is available
+                    if (conversation == null) {
+                        val error = IllegalStateException("Conversation is not initialized")
+                        LogManager.e(TAG, "Cannot send message: conversation is null")
+                        continuation.resumeWithException(error)
+                        return@suspendCancellableCoroutine
+                    }
                     
                     // Use MessageCallback for streaming
                     val callback = object : MessageCallback {
@@ -233,8 +242,7 @@ class LlamaModel(private val contentResolver: ContentResolver) {
                         override fun onDone() {
                             LogManager.i(TAG, "Streaming completed")
                             // Resume the coroutine when streaming is done
-                            if (!resumed) {
-                                resumed = true
+                            if (resumed.compareAndSet(false, true)) {
                                 continuation.resume(Unit)
                             }
                         }
@@ -243,15 +251,14 @@ class LlamaModel(private val contentResolver: ContentResolver) {
                             Log.e(TAG, "Streaming error", throwable)
                             LogManager.e(TAG, "Streaming error: ${throwable.message}", throwable)
                             // Resume with exception on error
-                            if (!resumed) {
-                                resumed = true
+                            if (resumed.compareAndSet(false, true)) {
                                 continuation.resumeWithException(throwable)
                             }
                         }
                     }
                     
                     val userMessage = Message.of(prompt)
-                    conversation?.sendMessageAsync(userMessage, callback)
+                    conversation.sendMessageAsync(userMessage, callback)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Streaming failed", e)
