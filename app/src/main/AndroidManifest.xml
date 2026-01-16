@@ -20,7 +20,10 @@
         android:usesCleartextTraffic="true"
         tools:targetApi="31">
         
-        <!-- LiteRT GPU backend support -->
+        <!-- LiteRT GPU backend support (optional) -->
+        <!-- These native libraries enable GPU acceleration for LiteRT inference -->
+        <!-- libvndksupport.so: Android Vendor NDK support for GPU operations -->
+        <!-- libOpenCL.so: OpenCL library for GPU computation -->
         <uses-native-library android:name="libvndksupport.so" android:required="false"/>
         <uses-native-library android:name="libOpenCL.so" android:required="false"/>
         

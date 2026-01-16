@@ -75,24 +75,29 @@ class LlamaModel(private val contentResolver: ContentResolver) {
         return try {
             LogManager.i(TAG, "Initializing LiteRT with model: $modelName")
             
-            // Create engine config with CPU backend by default
-            // GPU can provide better performance on supported devices
+            // Create engine config with CPU backend by default for compatibility
+            // GPU backend can provide better performance on supported devices
+            // To enable GPU: change Backend.CPU to Backend.GPU
             val engineConfig = EngineConfig(
                 modelPath = modelPath,
-                backend = Backend.CPU,  // Start with CPU for compatibility
+                backend = Backend.CPU,  // Start with CPU for universal compatibility
                 maxNumTokens = DEFAULT_MAX_TOKENS
             )
             
             // Initialize engine (this can take time, already on IO thread)
-            engine = Engine(engineConfig)
-            engine?.initialize()
+            val newEngine = Engine(engineConfig)
+            newEngine.initialize()
+            
+            // Only set engine and isLoaded if initialization succeeds
+            engine = newEngine
+            isLoaded = true
             
             LogManager.i(TAG, "LiteRT engine initialized successfully")
-            isLoaded = true
             true
         } catch (e: Exception) {
             Log.e(TAG, "Failed to load model", e)
             LogManager.e(TAG, "Failed to load model: ${e.message}", e)
+            engine = null
             isLoaded = false
             false
         }
@@ -211,7 +216,8 @@ class LlamaModel(private val contentResolver: ContentResolver) {
                 // Use MessageCallback for streaming
                 val callback = object : MessageCallback {
                     override fun onMessage(message: Message) {
-                        // Extract text content from message
+                        // LiteRT's Message contains the generated token/text
+                        // Using toString() to extract the text content
                         onToken(message.toString())
                     }
                     
@@ -249,17 +255,31 @@ class LlamaModel(private val contentResolver: ContentResolver) {
         return generateStream(prompt, GenerationConfig(maxTokens = maxTokens, temperature = temperature.toDouble()), onToken)
     }
     
-    fun unload() {
+    /**
+     * Cleanup resources by closing conversation and optionally engine.
+     */
+    private fun cleanup(closeEngine: Boolean = false) {
         try {
-            LogManager.i(TAG, "Unloading model")
             conversation?.close()
             conversation = null
+            
+            if (closeEngine) {
+                engine?.close()
+                engine = null
+                scope.cancel()
+            }
+            
             isLoaded = false
-            modelPath = null
         } catch (e: Exception) {
-            Log.e(TAG, "Error unloading model", e)
-            LogManager.e(TAG, "Error unloading model: ${e.message}", e)
+            Log.e(TAG, "Error during cleanup", e)
+            LogManager.e(TAG, "Error during cleanup: ${e.message}", e)
         }
+    }
+    
+    fun unload() {
+        LogManager.i(TAG, "Unloading model")
+        cleanup(closeEngine = false)
+        modelPath = null
     }
     
     /**
@@ -267,17 +287,7 @@ class LlamaModel(private val contentResolver: ContentResolver) {
      * Call this when you're done with the model to free memory immediately.
      */
     fun close() {
-        try {
-            LogManager.i(TAG, "Closing model and releasing resources")
-            conversation?.close()
-            conversation = null
-            engine?.close()
-            engine = null
-            scope.cancel()
-            isLoaded = false
-        } catch (e: Exception) {
-            Log.e(TAG, "Error closing model", e)
-            LogManager.e(TAG, "Error closing model: ${e.message}", e)
-        }
+        LogManager.i(TAG, "Closing model and releasing resources")
+        cleanup(closeEngine = true)
     }
 }
