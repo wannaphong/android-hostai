@@ -1,5 +1,6 @@
 package com.wannaphong.hostai
 
+import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import fi.iki.elonen.NanoHTTPD
@@ -15,6 +16,10 @@ import java.io.IOException
 class OpenAIApiServer(private val port: Int, private val model: LlamaModel) : NanoHTTPD(port) {
     
     private val gson = Gson()
+    
+    companion object {
+        private const val TAG = "OpenAIApiServer"
+    }
     
     override fun serve(session: IHTTPSession): Response {
         val uri = session.uri
@@ -247,7 +252,7 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel) : Na
         try {
             session.parseBody(map)
         } catch (e: IOException) {
-            e.printStackTrace()
+            Log.e(TAG, "Failed to parse request body", e)
         }
         return map["postData"] ?: ""
     }

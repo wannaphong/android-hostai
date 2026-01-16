@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.graphics.Color
+import android.net.ConnectivityManager
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
@@ -146,12 +147,29 @@ class MainActivity : AppCompatActivity() {
     
     private fun getLocalIpAddress(): String {
         try {
-            val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-            val ipAddress = wifiManager.connectionInfo.ipAddress
-            return Formatter.formatIpAddress(ipAddress)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                // For Android 12+, use ConnectivityManager
+                val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+                val network = connectivityManager.activeNetwork
+                val linkProperties = connectivityManager.getLinkProperties(network)
+                linkProperties?.linkAddresses?.forEach { linkAddress ->
+                    val address = linkAddress.address
+                    if (!address.isLoopbackAddress && address is java.net.Inet4Address) {
+                        return address.hostAddress ?: "localhost"
+                    }
+                }
+            } else {
+                // For older Android versions, use WifiManager
+                @Suppress("DEPRECATION")
+                val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+                @Suppress("DEPRECATION")
+                val ipAddress = wifiManager.connectionInfo.ipAddress
+                return Formatter.formatIpAddress(ipAddress)
+            }
         } catch (e: Exception) {
             return "localhost"
         }
+        return "localhost"
     }
     
     private fun copyUrlToClipboard() {

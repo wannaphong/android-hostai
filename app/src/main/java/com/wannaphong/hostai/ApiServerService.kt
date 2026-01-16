@@ -10,6 +10,7 @@ import android.content.Intent
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 
 /**
@@ -23,6 +24,7 @@ class ApiServerService : Service() {
     private var isRunning = false
     
     companion object {
+        private const val TAG = "ApiServerService"
         const val CHANNEL_ID = "ApiServerChannel"
         const val NOTIFICATION_ID = 1
         const val DEFAULT_PORT = 8080
@@ -96,7 +98,7 @@ class ApiServerService : Service() {
             
             true
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e(TAG, "Failed to start server", e)
             false
         }
     }
