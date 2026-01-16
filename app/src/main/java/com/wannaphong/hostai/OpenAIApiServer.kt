@@ -321,7 +321,10 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
                 var streamJob: Job? = null
                 try {
                     // Use larger buffer size for BufferedWriter to match PipedInputStream buffer
-                    val writer = pipedOutputStream.bufferedWriter(Charsets.UTF_8, STREAM_BUFFER_SIZE)
+                    val writer = java.io.BufferedWriter(
+                        java.io.OutputStreamWriter(pipedOutputStream, Charsets.UTF_8),
+                        STREAM_BUFFER_SIZE
+                    )
                     val id = "chatcmpl-${System.currentTimeMillis()}"
                     val created = System.currentTimeMillis() / 1000
                     var tokenCount = 0
@@ -447,7 +450,10 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
                 var streamJob: Job? = null
                 try {
                     // Use larger buffer size for BufferedWriter to match PipedInputStream buffer
-                    val writer = pipedOutputStream.bufferedWriter(Charsets.UTF_8, STREAM_BUFFER_SIZE)
+                    val writer = java.io.BufferedWriter(
+                        java.io.OutputStreamWriter(pipedOutputStream, Charsets.UTF_8),
+                        STREAM_BUFFER_SIZE
+                    )
                     val id = "cmpl-${System.currentTimeMillis()}"
                     val created = System.currentTimeMillis() / 1000
                     var tokenCount = 0
