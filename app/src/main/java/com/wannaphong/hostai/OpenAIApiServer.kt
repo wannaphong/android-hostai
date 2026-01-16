@@ -31,10 +31,24 @@ class OpenAIApiServer(
         .disableHtmlEscaping()
         .create()
     
+    // Coroutine scope for streaming responses
+    private val serverScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    
     companion object {
         private const val TAG = "OpenAIApiServer"
         // Maximum request body size (10 MB) to prevent memory exhaustion attacks
         private const val MAX_REQUEST_BODY_SIZE = 10 * 1024 * 1024
+    }
+    
+    override fun start() {
+        super.start()
+        LogManager.i(TAG, "NanoHTTPD server started on port $port")
+    }
+    
+    override fun stop() {
+        super.stop()
+        serverScope.cancel() // Cancel all streaming coroutines
+        LogManager.i(TAG, "NanoHTTPD server stopped")
     }
     
     override fun serve(session: IHTTPSession): Response {
@@ -263,6 +277,9 @@ class OpenAIApiServer(
         // Generate response
         val completion = model.generate(prompt, config)
         
+        val promptTokens = prompt.split(" ").size
+        val completionTokens = completion.split(" ").size
+        
         val response = mapOf(
             "id" to "chatcmpl-${System.currentTimeMillis()}",
             "object" to "chat.completion",
@@ -279,9 +296,9 @@ class OpenAIApiServer(
                 )
             ),
             "usage" to mapOf(
-                "prompt_tokens" to prompt.split(" ").size,
-                "completion_tokens" to completion.split(" ").size,
-                "total_tokens" to (prompt.split(" ").size + completion.split(" ").size)
+                "prompt_tokens" to promptTokens,
+                "completion_tokens" to completionTokens,
+                "total_tokens" to (promptTokens + completionTokens)
             )
         )
         
@@ -306,8 +323,8 @@ class OpenAIApiServer(
         val id = "chatcmpl-${System.currentTimeMillis()}"
         val created = System.currentTimeMillis() / 1000
         
-        // Start streaming in a coroutine
-        GlobalScope.launch(Dispatchers.IO) {
+        // Start streaming in a coroutine with proper scope
+        serverScope.launch {
             try {
                 val writer = pipedOutputStream.writer(Charsets.UTF_8)
                 var tokenCount = 0
@@ -452,6 +469,9 @@ class OpenAIApiServer(
         // Generate response
         val completion = model.generate(prompt, config)
         
+        val promptTokens = prompt.split(" ").size
+        val completionTokens = completion.split(" ").size
+        
         val response = mapOf(
             "id" to "cmpl-${System.currentTimeMillis()}",
             "object" to "text_completion",
@@ -465,9 +485,9 @@ class OpenAIApiServer(
                 )
             ),
             "usage" to mapOf(
-                "prompt_tokens" to prompt.split(" ").size,
-                "completion_tokens" to completion.split(" ").size,
-                "total_tokens" to (prompt.split(" ").size + completion.split(" ").size)
+                "prompt_tokens" to promptTokens,
+                "completion_tokens" to completionTokens,
+                "total_tokens" to (promptTokens + completionTokens)
             )
         )
         
@@ -490,8 +510,8 @@ class OpenAIApiServer(
         val id = "cmpl-${System.currentTimeMillis()}"
         val created = System.currentTimeMillis() / 1000
         
-        // Start streaming in a coroutine
-        GlobalScope.launch(Dispatchers.IO) {
+        // Start streaming in a coroutine with proper scope
+        serverScope.launch {
             try {
                 val writer = pipedOutputStream.writer(Charsets.UTF_8)
                 var tokenCount = 0
