@@ -11,6 +11,7 @@ import java.io.PipedInputStream
 import java.io.PipedOutputStream
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 
@@ -313,14 +314,21 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
             
             // Start streaming in a coroutine
             CoroutineScope(Dispatchers.IO).launch {
+                var streamJob: Job? = null
                 try {
                     val writer = pipedOutputStream.bufferedWriter()
                     val id = "chatcmpl-${System.currentTimeMillis()}"
                     val created = System.currentTimeMillis() / 1000
                     var tokenCount = 0
+                    var streamClosed = false
                     
                     // Start the stream
-                    val streamJob = model.generateStream(prompt, config) { token ->
+                    streamJob = model.generateStream(prompt, config) { token ->
+                        // Check if stream is already closed, if so, don't process more tokens
+                        if (streamClosed) {
+                            return@generateStream
+                        }
+                        
                         try {
                             tokenCount++
                             
@@ -346,37 +354,61 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
                             writer.flush()
                             
                             LogManager.d(TAG, "Streamed token #$tokenCount")
+                        } catch (e: IOException) {
+                            // Client disconnected or pipe closed - stop streaming gracefully
+                            LogManager.d(TAG, "Client disconnected during streaming (token #$tokenCount)")
+                            streamClosed = true
+                            // Cancel the streaming job to stop generating more tokens
+                            streamJob?.cancel()
                         } catch (e: Exception) {
                             LogManager.e(TAG, "Error writing token to stream", e)
+                            streamClosed = true
+                            streamJob?.cancel()
                         }
                     }
                     
-                    // Wait for streaming to complete
+                    // Wait for streaming to complete (or be cancelled)
                     streamJob?.join()
                     
-                    // Send final chunk with finish_reason
-                    val finalChunk = mapOf(
-                        "id" to id,
-                        "object" to "chat.completion.chunk",
-                        "created" to created,
-                        "model" to model.getModelName(),
-                        "choices" to listOf(
-                            mapOf(
-                                "index" to 0,
-                                "delta" to mapOf<String, String>(),
-                                "finish_reason" to "stop"
+                    // Only send final chunks if stream is not closed
+                    if (!streamClosed) {
+                        try {
+                            // Send final chunk with finish_reason
+                            val finalChunk = mapOf(
+                                "id" to id,
+                                "object" to "chat.completion.chunk",
+                                "created" to created,
+                                "model" to model.getModelName(),
+                                "choices" to listOf(
+                                    mapOf(
+                                        "index" to 0,
+                                        "delta" to mapOf<String, String>(),
+                                        "finish_reason" to "stop"
+                                    )
+                                )
                             )
-                        )
-                    )
-                    writer.write("data: ${gson.toJson(finalChunk)}\n\n")
-                    writer.write("data: [DONE]\n\n")
-                    writer.flush()
-                    writer.close()
+                            writer.write("data: ${gson.toJson(finalChunk)}\n\n")
+                            writer.write("data: [DONE]\n\n")
+                            writer.flush()
+                            
+                            LogManager.i(TAG, "Chat streaming completed with $tokenCount tokens")
+                        } catch (e: IOException) {
+                            LogManager.d(TAG, "Client disconnected before final chunk could be sent")
+                        }
+                    } else {
+                        LogManager.i(TAG, "Chat streaming stopped early at $tokenCount tokens (client disconnected)")
+                    }
                     
-                    LogManager.i(TAG, "Chat streaming completed with $tokenCount tokens")
+                    writer.close()
                 } catch (e: Exception) {
                     LogManager.e(TAG, "Error in chat streaming", e)
-                    pipedOutputStream.close()
+                    streamJob?.cancel()
+                } finally {
+                    try {
+                        pipedOutputStream.close()
+                    } catch (e: IOException) {
+                        // Ignore - already closed
+                    }
                 }
             }
             
@@ -409,14 +441,21 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
             
             // Start streaming in a coroutine
             CoroutineScope(Dispatchers.IO).launch {
+                var streamJob: Job? = null
                 try {
                     val writer = pipedOutputStream.bufferedWriter()
                     val id = "cmpl-${System.currentTimeMillis()}"
                     val created = System.currentTimeMillis() / 1000
                     var tokenCount = 0
+                    var streamClosed = false
                     
                     // Start the stream
-                    val streamJob = model.generateStream(prompt, config) { token ->
+                    streamJob = model.generateStream(prompt, config) { token ->
+                        // Check if stream is already closed, if so, don't process more tokens
+                        if (streamClosed) {
+                            return@generateStream
+                        }
+                        
                         try {
                             tokenCount++
                             
@@ -440,37 +479,61 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
                             writer.flush()
                             
                             LogManager.d(TAG, "Streamed token #$tokenCount")
+                        } catch (e: IOException) {
+                            // Client disconnected or pipe closed - stop streaming gracefully
+                            LogManager.d(TAG, "Client disconnected during streaming (token #$tokenCount)")
+                            streamClosed = true
+                            // Cancel the streaming job to stop generating more tokens
+                            streamJob?.cancel()
                         } catch (e: Exception) {
                             LogManager.e(TAG, "Error writing token to stream", e)
+                            streamClosed = true
+                            streamJob?.cancel()
                         }
                     }
                     
-                    // Wait for streaming to complete
+                    // Wait for streaming to complete (or be cancelled)
                     streamJob?.join()
                     
-                    // Send final chunk with finish_reason
-                    val finalChunk = mapOf(
-                        "id" to id,
-                        "object" to "text_completion",
-                        "created" to created,
-                        "model" to model.getModelName(),
-                        "choices" to listOf(
-                            mapOf(
-                                "text" to "",
-                                "index" to 0,
-                                "finish_reason" to "stop"
+                    // Only send final chunks if stream is not closed
+                    if (!streamClosed) {
+                        try {
+                            // Send final chunk with finish_reason
+                            val finalChunk = mapOf(
+                                "id" to id,
+                                "object" to "text_completion",
+                                "created" to created,
+                                "model" to model.getModelName(),
+                                "choices" to listOf(
+                                    mapOf(
+                                        "text" to "",
+                                        "index" to 0,
+                                        "finish_reason" to "stop"
+                                    )
+                                )
                             )
-                        )
-                    )
-                    writer.write("data: ${gson.toJson(finalChunk)}\n\n")
-                    writer.write("data: [DONE]\n\n")
-                    writer.flush()
-                    writer.close()
+                            writer.write("data: ${gson.toJson(finalChunk)}\n\n")
+                            writer.write("data: [DONE]\n\n")
+                            writer.flush()
+                            
+                            LogManager.i(TAG, "Completion streaming completed with $tokenCount tokens")
+                        } catch (e: IOException) {
+                            LogManager.d(TAG, "Client disconnected before final chunk could be sent")
+                        }
+                    } else {
+                        LogManager.i(TAG, "Completion streaming stopped early at $tokenCount tokens (client disconnected)")
+                    }
                     
-                    LogManager.i(TAG, "Completion streaming completed with $tokenCount tokens")
+                    writer.close()
                 } catch (e: Exception) {
                     LogManager.e(TAG, "Error in completion streaming", e)
-                    pipedOutputStream.close()
+                    streamJob?.cancel()
+                } finally {
+                    try {
+                        pipedOutputStream.close()
+                    } catch (e: IOException) {
+                        // Ignore - already closed
+                    }
                 }
             }
             
