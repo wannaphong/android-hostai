@@ -88,6 +88,12 @@ class ApiServerService : Service() {
         LogManager.i(TAG, "Starting API server on port $port")
         
         return try {
+            // Start foreground service IMMEDIATELY to prevent Android from killing the service
+            // This must be called within 5 seconds on Android O+ or the service will crash
+            val notification = createNotification(port)
+            startForeground(NOTIFICATION_ID, notification)
+            
+            // Now we can safely do heavy operations like model loading
             // Initialize model with ContentResolver
             LogManager.i(TAG, "Initializing model...")
             val llamaModel = LlamaModel(contentResolver)
@@ -108,14 +114,12 @@ class ApiServerService : Service() {
             
             LogManager.i(TAG, "API server started successfully")
             
-            // Start foreground service
-            val notification = createNotification(port)
-            startForeground(NOTIFICATION_ID, notification)
-            
             true
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start server", e)
             LogManager.e(TAG, "Failed to start server", e)
+            // Make sure we stop foreground if we failed after starting it
+            stopForeground(true)
             false
         }
     }
