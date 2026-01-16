@@ -220,6 +220,8 @@ class LlamaModel(private val contentResolver: ContentResolver) {
                 
                 // Use suspendCancellableCoroutine to wait for async callback to complete
                 suspendCancellableCoroutine<Unit> { continuation ->
+                    var resumed = false
+                    
                     // Use MessageCallback for streaming
                     val callback = object : MessageCallback {
                         override fun onMessage(message: Message) {
@@ -231,14 +233,20 @@ class LlamaModel(private val contentResolver: ContentResolver) {
                         override fun onDone() {
                             LogManager.i(TAG, "Streaming completed")
                             // Resume the coroutine when streaming is done
-                            continuation.resume(Unit)
+                            if (!resumed) {
+                                resumed = true
+                                continuation.resume(Unit)
+                            }
                         }
                         
                         override fun onError(throwable: Throwable) {
                             Log.e(TAG, "Streaming error", throwable)
                             LogManager.e(TAG, "Streaming error: ${throwable.message}", throwable)
                             // Resume with exception on error
-                            continuation.resumeWithException(throwable)
+                            if (!resumed) {
+                                resumed = true
+                                continuation.resumeWithException(throwable)
+                            }
                         }
                     }
                     
