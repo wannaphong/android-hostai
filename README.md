@@ -121,7 +121,7 @@ print(response.choices[0].message.content)
 
 - **MainActivity** - User interface for controlling the server and selecting models
 - **ApiServerService** - Foreground service that runs the HTTP server
-- **OpenAIApiServer** - Ktor-based web server with OpenAI-compatible endpoints and SSE streaming support
+- **OpenAIApiServer** - NanoHTTPD-based web server with OpenAI-compatible endpoints and SSE streaming support
 - **LlamaModel** - Model interface using LiteRT library for native LLM inference
 
 ## Implementation
@@ -150,7 +150,7 @@ Apache License 2.0 - See LICENSE file for details
 
 - [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) - Language model runtime for edge devices
 - [LiteRT](https://github.com/google-ai-edge/LiteRT) - TensorFlow Lite runtime
-- [Ktor](https://github.com/ktorio/ktor) - Kotlin-based HTTP server with native SSE support
+- [NanoHTTPD](https://github.com/NanoHttpd/nanohttpd) - Lightweight HTTP server for embedded systems
 
 ## Contributing
 

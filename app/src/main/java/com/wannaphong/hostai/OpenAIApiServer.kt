@@ -5,18 +5,16 @@ import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonObject
-import io.ktor.http.*
-import io.ktor.server.application.*
-import io.ktor.server.cio.*
-import io.ktor.server.engine.*
-import io.ktor.server.request.*
-import io.ktor.server.response.*
-import io.ktor.server.routing.*
+import fi.iki.elonen.NanoHTTPD
 import kotlinx.coroutines.*
+import java.io.ByteArrayInputStream
 import java.io.IOException
+import java.io.InputStream
+import java.io.PipedInputStream
+import java.io.PipedOutputStream
 
 /**
- * OpenAI-compatible API server implementation using Ktor.
+ * OpenAI-compatible API server implementation using NanoHTTPD.
  * Implements the following endpoints:
  * - POST /v1/chat/completions - Chat completions (OpenAI format)
  * - POST /v1/completions - Text completions (OpenAI format)
@@ -27,13 +25,11 @@ class OpenAIApiServer(
     private val port: Int,
     private val model: LlamaModel,
     private val context: Context
-) {
+) : NanoHTTPD(port) {
     
     private val gson = GsonBuilder()
         .disableHtmlEscaping()
         .create()
-    
-    private var server: ApplicationEngine? = null
     
     companion object {
         private const val TAG = "OpenAIApiServer"
@@ -41,92 +37,57 @@ class OpenAIApiServer(
         private const val MAX_REQUEST_BODY_SIZE = 10 * 1024 * 1024
     }
     
-    fun start() {
-        server = embeddedServer(CIO, port = port, host = "0.0.0.0") {
-            configureRouting()
-        }.start(wait = false)
+    override fun serve(session: IHTTPSession): Response {
+        val uri = session.uri
+        val method = session.method
         
-        LogManager.i(TAG, "Ktor server started on port $port")
-    }
-    
-    fun stop() {
-        server?.stop(1000, 2000)
-        server = null
-        LogManager.i(TAG, "Ktor server stopped")
-    }
-    
-    /**
-     * Safely receive request body with size limits to prevent memory exhaustion attacks.
-     */
-    private suspend fun ApplicationCall.receiveTextWithSizeLimit(): String {
-        val contentLength = request.headers[HttpHeaders.ContentLength]?.toLongOrNull()
+        LogManager.d(TAG, "Received ${method.name} request to $uri")
         
-        // Security: Check content length before reading
-        if (contentLength != null && contentLength > MAX_REQUEST_BODY_SIZE) {
-            LogManager.w(TAG, "Request body too large: $contentLength bytes (max: $MAX_REQUEST_BODY_SIZE)")
-            throw IOException("Request body too large")
-        }
-        
-        return receiveText()
-    }
-    
-    private fun Application.configureRouting() {
-        routing {
-            // Health check
-            get("/health") {
-                handleHealth(call)
+        return try {
+            when {
+                uri == "/health" && method == Method.GET -> handleHealth()
+                uri == "/v1/models" && method == Method.GET -> handleModels()
+                uri == "/v1/chat/completions" && method == Method.POST -> handleChatCompletions(session)
+                uri == "/v1/completions" && method == Method.POST -> handleCompletions(session)
+                uri == "/" && method == Method.GET -> handleRoot()
+                uri == "/chat" && method == Method.GET -> handleChatUI()
+                uri.startsWith("/assets/") && method == Method.GET -> {
+                    val fileName = uri.substring(8) // Remove "/assets/"
+                    handleAssets(fileName)
+                }
+                else -> newFixedLengthResponse(
+                    Response.Status.NOT_FOUND,
+                    MIME_PLAINTEXT,
+                    "Not Found"
+                )
             }
-            
-            // Models endpoint
-            get("/v1/models") {
-                handleModels(call)
-            }
-            
-            // Chat completions
-            post("/v1/chat/completions") {
-                handleChatCompletions(call)
-            }
-            
-            // Text completions
-            post("/v1/completions") {
-                handleCompletions(call)
-            }
-            
-            // Root endpoint
-            get("/") {
-                handleRoot(call)
-            }
-            
-            // Chat UI
-            get("/chat") {
-                handleChatUI(call)
-            }
-            
-            // Assets
-            get("/assets/{file}") {
-                val fileName = call.parameters["file"] ?: ""
-                handleAssets(call, fileName)
-            }
+        } catch (e: Exception) {
+            LogManager.e(TAG, "Error handling request", e)
+            newFixedLengthResponse(
+                Response.Status.INTERNAL_ERROR,
+                "application/json",
+                gson.toJson(mapOf("error" to mapOf("message" to e.message)))
+            )
         }
     }
     
-    private suspend fun handleHealth(call: ApplicationCall) {
-        LogManager.d(TAG, "Received GET request to /health")
+    private fun handleHealth(): Response {
+        LogManager.d(TAG, "Handling /health")
         
         val health = mapOf(
             "status" to "ok",
             "model_loaded" to model.isModelLoaded()
         )
         
-        call.respondText(
-            gson.toJson(health),
-            ContentType.Application.Json,
-            HttpStatusCode.OK
+        return newFixedLengthResponse(
+            Response.Status.OK,
+            "application/json",
+            gson.toJson(health)
         )
     }
     
-    private suspend fun handleModels(call: ApplicationCall) {
-        LogManager.d(TAG, "Received GET request to /v1/models")
+    private fun handleModels(): Response {
+        LogManager.d(TAG, "Handling /v1/models")
         
         val models = mapOf(
             "object" to "list",
@@ -140,15 +101,15 @@ class OpenAIApiServer(
             )
         )
         
-        call.respondText(
-            gson.toJson(models),
-            ContentType.Application.Json,
-            HttpStatusCode.OK
+        return newFixedLengthResponse(
+            Response.Status.OK,
+            "application/json",
+            gson.toJson(models)
         )
     }
     
-    private suspend fun handleRoot(call: ApplicationCall) {
-        LogManager.d(TAG, "Received GET request to /")
+    private fun handleRoot(): Response {
+        LogManager.d(TAG, "Handling /")
         
         val html = """
             <!DOCTYPE html>
@@ -192,71 +153,75 @@ class OpenAIApiServer(
             </html>
         """.trimIndent()
         
-        call.respondText(html, ContentType.Text.Html, HttpStatusCode.OK)
+        return newFixedLengthResponse(Response.Status.OK, "text/html", html)
     }
     
-    private suspend fun handleChatUI(call: ApplicationCall) {
-        LogManager.d(TAG, "Received GET request to /chat")
+    private fun handleChatUI(): Response {
+        LogManager.d(TAG, "Handling /chat")
         
-        try {
+        return try {
             val inputStream = context.assets.open("index.html")
             val html = inputStream.bufferedReader().use { it.readText() }
-            call.respondText(html, ContentType.Text.Html, HttpStatusCode.OK)
+            newFixedLengthResponse(Response.Status.OK, "text/html", html)
         } catch (e: Exception) {
             LogManager.e(TAG, "Error loading chat UI", e)
-            call.respondText(
-                "<html><body><h1>Error loading chat UI</h1><p>${e.message}</p></body></html>",
-                ContentType.Text.Html,
-                HttpStatusCode.InternalServerError
+            newFixedLengthResponse(
+                Response.Status.INTERNAL_ERROR,
+                "text/html",
+                "<html><body><h1>Error loading chat UI</h1><p>${e.message}</p></body></html>"
             )
         }
     }
     
-    private suspend fun handleAssets(call: ApplicationCall, fileName: String) {
-        LogManager.d(TAG, "Received GET request to /assets/$fileName")
+    private fun handleAssets(fileName: String): Response {
+        LogManager.d(TAG, "Handling /assets/$fileName")
         
         try {
             // Security: Prevent path traversal attacks
             if (fileName.contains("..") || fileName.startsWith("/") || fileName.contains("\\")) {
                 LogManager.w(TAG, "Rejected potential path traversal attempt: $fileName")
-                call.respondText(
-                    "Invalid asset path",
-                    ContentType.Text.Plain,
-                    HttpStatusCode.Forbidden
+                return newFixedLengthResponse(
+                    Response.Status.FORBIDDEN,
+                    MIME_PLAINTEXT,
+                    "Invalid asset path"
                 )
-                return
             }
             
             // Determine MIME type based on file extension
-            val contentType = when {
-                fileName.endsWith(".ico") -> ContentType.Image.XIcon
-                fileName.endsWith(".json") -> ContentType.Application.Json
-                fileName.endsWith(".html") -> ContentType.Text.Html
-                fileName.endsWith(".css") -> ContentType.Text.CSS
-                fileName.endsWith(".js") -> ContentType.Application.JavaScript
-                else -> ContentType.Application.OctetStream
+            val mimeType = when {
+                fileName.endsWith(".ico") -> "image/x-icon"
+                fileName.endsWith(".json") -> "application/json"
+                fileName.endsWith(".html") -> "text/html"
+                fileName.endsWith(".css") -> "text/css"
+                fileName.endsWith(".js") -> "application/javascript"
+                else -> "application/octet-stream"
             }
             
             val inputStream = context.assets.open(fileName)
             val bytes = inputStream.readBytes()
             inputStream.close()
             
-            call.respondBytes(bytes, contentType, HttpStatusCode.OK)
+            return newFixedLengthResponse(
+                Response.Status.OK,
+                mimeType,
+                ByteArrayInputStream(bytes),
+                bytes.size.toLong()
+            )
         } catch (e: Exception) {
             LogManager.e(TAG, "Error loading asset: $fileName", e)
-            call.respondText(
-                "Asset not found",
-                ContentType.Text.Plain,
-                HttpStatusCode.NotFound
+            return newFixedLengthResponse(
+                Response.Status.NOT_FOUND,
+                MIME_PLAINTEXT,
+                "Asset not found"
             )
         }
     }
     
-    private suspend fun handleChatCompletions(call: ApplicationCall) {
-        LogManager.d(TAG, "Received POST request to /v1/chat/completions")
+    private fun handleChatCompletions(session: IHTTPSession): Response {
+        LogManager.d(TAG, "Handling /v1/chat/completions")
         
-        try {
-            val bodyText = call.receiveTextWithSizeLimit()
+        return try {
+            val bodyText = getRequestBody(session)
             val request = gson.fromJson(bodyText, JsonObject::class.java)
             
             LogManager.i(TAG, "Chat completion request received")
@@ -277,25 +242,24 @@ class OpenAIApiServer(
             LogManager.d(TAG, "Chat completion - stream: $stream, maxTokens: ${config.maxTokens}, temp: ${config.temperature}")
             
             if (stream) {
-                handleChatStreamingResponse(call, prompt, config)
+                handleChatStreamingResponse(prompt, config)
             } else {
-                handleChatNonStreamingResponse(call, prompt, config)
+                handleChatNonStreamingResponse(prompt, config)
             }
         } catch (e: Exception) {
             LogManager.e(TAG, "Error handling chat completions", e)
-            call.respondText(
-                gson.toJson(mapOf("error" to mapOf("message" to e.message))),
-                ContentType.Application.Json,
-                HttpStatusCode.InternalServerError
+            newFixedLengthResponse(
+                Response.Status.INTERNAL_ERROR,
+                "application/json",
+                gson.toJson(mapOf("error" to mapOf("message" to e.message)))
             )
         }
     }
     
-    private suspend fun handleChatNonStreamingResponse(
-        call: ApplicationCall,
+    private fun handleChatNonStreamingResponse(
         prompt: String,
         config: GenerationConfig
-    ) {
+    ): Response {
         // Generate response
         val completion = model.generate(prompt, config)
         
@@ -323,32 +287,31 @@ class OpenAIApiServer(
         
         LogManager.i(TAG, "Chat completion completed successfully")
         
-        call.respondText(
-            gson.toJson(response),
-            ContentType.Application.Json,
-            HttpStatusCode.OK
+        return newFixedLengthResponse(
+            Response.Status.OK,
+            "application/json",
+            gson.toJson(response)
         )
     }
     
-    private suspend fun handleChatStreamingResponse(
-        call: ApplicationCall,
+    private fun handleChatStreamingResponse(
         prompt: String,
         config: GenerationConfig
-    ) {
+    ): Response {
         LogManager.i(TAG, "Starting chat streaming response")
         
-        // Set headers before starting response
-        call.response.header(HttpHeaders.ContentType, "text/event-stream")
-        call.response.header(HttpHeaders.CacheControl, "no-cache")
-        call.response.header(HttpHeaders.Connection, "keep-alive")
+        val pipedOutputStream = PipedOutputStream()
+        val pipedInputStream = PipedInputStream(pipedOutputStream)
         
-        call.respondOutputStream {
-            val writer = this.writer(Charsets.UTF_8)
-            val id = "chatcmpl-${System.currentTimeMillis()}"
-            val created = System.currentTimeMillis() / 1000
-            var tokenCount = 0
-            
+        val id = "chatcmpl-${System.currentTimeMillis()}"
+        val created = System.currentTimeMillis() / 1000
+        
+        // Start streaming in a coroutine
+        GlobalScope.launch(Dispatchers.IO) {
             try {
+                val writer = pipedOutputStream.writer(Charsets.UTF_8)
+                var tokenCount = 0
+                
                 val job = model.generateStream(prompt, config) { token ->
                     try {
                         tokenCount++
@@ -409,7 +372,8 @@ class OpenAIApiServer(
                     writer.write("data: ${gson.toJson(errorChunk)}\n\n")
                     writer.write("data: [DONE]\n\n")
                     writer.flush()
-                    return@respondOutputStream
+                    writer.close()
+                    return@launch
                 }
                 
                 // Send final chunk with finish_reason
@@ -429,19 +393,34 @@ class OpenAIApiServer(
                 writer.write("data: ${gson.toJson(finalChunk)}\n\n")
                 writer.write("data: [DONE]\n\n")
                 writer.flush()
+                writer.close()
                 
                 LogManager.i(TAG, "Chat streaming completed with $tokenCount tokens")
             } catch (e: Exception) {
                 LogManager.e(TAG, "Error in chat streaming", e)
+                try {
+                    pipedOutputStream.close()
+                } catch (ex: Exception) {
+                    // Ignore
+                }
             }
         }
+        
+        val response = newChunkedResponse(
+            Response.Status.OK,
+            "text/event-stream",
+            pipedInputStream
+        )
+        response.addHeader("Cache-Control", "no-cache")
+        response.addHeader("Connection", "keep-alive")
+        return response
     }
     
-    private suspend fun handleCompletions(call: ApplicationCall) {
-        LogManager.d(TAG, "Received POST request to /v1/completions")
+    private fun handleCompletions(session: IHTTPSession): Response {
+        LogManager.d(TAG, "Handling /v1/completions")
         
-        try {
-            val bodyText = call.receiveTextWithSizeLimit()
+        return try {
+            val bodyText = getRequestBody(session)
             val request = gson.fromJson(bodyText, JsonObject::class.java)
             
             // Extract parameters
@@ -452,25 +431,24 @@ class OpenAIApiServer(
             val config = extractGenerationConfig(request)
             
             if (stream) {
-                handleCompletionStreamingResponse(call, prompt, config)
+                handleCompletionStreamingResponse(prompt, config)
             } else {
-                handleCompletionNonStreamingResponse(call, prompt, config)
+                handleCompletionNonStreamingResponse(prompt, config)
             }
         } catch (e: Exception) {
             LogManager.e(TAG, "Error handling completions", e)
-            call.respondText(
-                gson.toJson(mapOf("error" to mapOf("message" to e.message))),
-                ContentType.Application.Json,
-                HttpStatusCode.InternalServerError
+            newFixedLengthResponse(
+                Response.Status.INTERNAL_ERROR,
+                "application/json",
+                gson.toJson(mapOf("error" to mapOf("message" to e.message)))
             )
         }
     }
     
-    private suspend fun handleCompletionNonStreamingResponse(
-        call: ApplicationCall,
+    private fun handleCompletionNonStreamingResponse(
         prompt: String,
         config: GenerationConfig
-    ) {
+    ): Response {
         // Generate response
         val completion = model.generate(prompt, config)
         
@@ -493,32 +471,31 @@ class OpenAIApiServer(
             )
         )
         
-        call.respondText(
-            gson.toJson(response),
-            ContentType.Application.Json,
-            HttpStatusCode.OK
+        return newFixedLengthResponse(
+            Response.Status.OK,
+            "application/json",
+            gson.toJson(response)
         )
     }
     
-    private suspend fun handleCompletionStreamingResponse(
-        call: ApplicationCall,
+    private fun handleCompletionStreamingResponse(
         prompt: String,
         config: GenerationConfig
-    ) {
+    ): Response {
         LogManager.i(TAG, "Starting completion streaming response")
         
-        // Set headers before starting response
-        call.response.header(HttpHeaders.ContentType, "text/event-stream")
-        call.response.header(HttpHeaders.CacheControl, "no-cache")
-        call.response.header(HttpHeaders.Connection, "keep-alive")
+        val pipedOutputStream = PipedOutputStream()
+        val pipedInputStream = PipedInputStream(pipedOutputStream)
         
-        call.respondOutputStream {
-            val writer = this.writer(Charsets.UTF_8)
-            val id = "cmpl-${System.currentTimeMillis()}"
-            val created = System.currentTimeMillis() / 1000
-            var tokenCount = 0
-            
+        val id = "cmpl-${System.currentTimeMillis()}"
+        val created = System.currentTimeMillis() / 1000
+        
+        // Start streaming in a coroutine
+        GlobalScope.launch(Dispatchers.IO) {
             try {
+                val writer = pipedOutputStream.writer(Charsets.UTF_8)
+                var tokenCount = 0
+                
                 val job = model.generateStream(prompt, config) { token ->
                     try {
                         tokenCount++
@@ -575,7 +552,8 @@ class OpenAIApiServer(
                     writer.write("data: ${gson.toJson(errorChunk)}\n\n")
                     writer.write("data: [DONE]\n\n")
                     writer.flush()
-                    return@respondOutputStream
+                    writer.close()
+                    return@launch
                 }
                 
                 // Send final chunk with finish_reason
@@ -595,12 +573,27 @@ class OpenAIApiServer(
                 writer.write("data: ${gson.toJson(finalChunk)}\n\n")
                 writer.write("data: [DONE]\n\n")
                 writer.flush()
+                writer.close()
                 
                 LogManager.i(TAG, "Completion streaming completed with $tokenCount tokens")
             } catch (e: Exception) {
                 LogManager.e(TAG, "Error in completion streaming", e)
+                try {
+                    pipedOutputStream.close()
+                } catch (ex: Exception) {
+                    // Ignore
+                }
             }
         }
+        
+        val response = newChunkedResponse(
+            Response.Status.OK,
+            "text/event-stream",
+            pipedInputStream
+        )
+        response.addHeader("Cache-Control", "no-cache")
+        response.addHeader("Connection", "keep-alive")
+        return response
     }
     
     private fun buildPromptFromMessages(messages: com.google.gson.JsonArray): String {
@@ -626,5 +619,23 @@ class OpenAIApiServer(
             topP = request.get("top_p")?.asDouble ?: 0.95,
             seed = request.get("seed")?.asInt ?: -1
         )
+    }
+    
+    /**
+     * Safely receive request body with size limits to prevent memory exhaustion attacks.
+     */
+    private fun getRequestBody(session: IHTTPSession): String {
+        val contentLength = session.headers["content-length"]?.toLongOrNull() ?: 0L
+        
+        // Security: Check content length before reading
+        if (contentLength > MAX_REQUEST_BODY_SIZE) {
+            LogManager.w(TAG, "Request body too large: $contentLength bytes (max: $MAX_REQUEST_BODY_SIZE)")
+            throw IOException("Request body too large")
+        }
+        
+        val files = mutableMapOf<String, String>()
+        session.parseBody(files)
+        
+        return files["postData"] ?: ""
     }
 }
