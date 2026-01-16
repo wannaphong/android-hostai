@@ -94,9 +94,13 @@ class LlamaModel {
         modelPath = null
     }
     
-    protected fun finalize() {
-        // Clean up native resources when object is garbage collected
+    /**
+     * Explicitly release native resources.
+     * Call this when you're done with the model to free memory immediately.
+     */
+    fun close() {
         if (nativeContext != 0L) {
+            unload()
             nativeFree(nativeContext)
             nativeContext = 0
         }

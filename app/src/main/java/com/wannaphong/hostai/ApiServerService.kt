@@ -107,7 +107,7 @@ class ApiServerService : Service() {
     
     fun stopServer() {
         apiServer?.stop()
-        model?.unload()
+        model?.close()  // Explicitly close to free native resources
         apiServer = null
         model = null
         isRunning = false

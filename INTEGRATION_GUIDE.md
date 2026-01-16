@@ -135,10 +135,11 @@ Replace the placeholder structure with:
 struct LlamaContext {
     llama_model *model;
     llama_context *ctx;
+    llama_sampler *sampler;
     std::string model_path;
     bool is_loaded;
     
-    LlamaContext() : model(nullptr), ctx(nullptr), is_loaded(false) {}
+    LlamaContext() : model(nullptr), ctx(nullptr), sampler(nullptr), is_loaded(false) {}
 };
 ```
 
@@ -188,6 +189,12 @@ Java_com_wannaphong_hostai_LlamaModel_nativeLoadModel(
         llamaCtx->model = nullptr;
         return JNI_FALSE;
     }
+    
+    // Create sampler
+    llama_sampler_chain_params sparams = llama_sampler_chain_default_params();
+    llamaCtx->sampler = llama_sampler_chain_init(sparams);
+    llama_sampler_chain_add(llamaCtx->sampler, llama_sampler_init_temp(0.7f));
+    llama_sampler_chain_add(llamaCtx->sampler, llama_sampler_init_dist(0));
     
     llamaCtx->is_loaded = true;
     LOGI("Model loaded successfully");
@@ -278,6 +285,11 @@ Java_com_wannaphong_hostai_LlamaModel_nativeUnload(JNIEnv *env, jobject thiz, jl
     
     LOGI("Unloading model");
     
+    if (llamaCtx->sampler) {
+        llama_sampler_free(llamaCtx->sampler);
+        llamaCtx->sampler = nullptr;
+    }
+    
     if (llamaCtx->ctx) {
         llama_free(llamaCtx->ctx);
         llamaCtx->ctx = nullptr;
@@ -301,6 +313,9 @@ Java_com_wannaphong_hostai_LlamaModel_nativeFree(JNIEnv *env, jobject thiz, jlon
     LOGI("Freeing LlamaContext");
     
     // Make sure everything is cleaned up
+    if (llamaCtx->sampler) {
+        llama_sampler_free(llamaCtx->sampler);
+    }
     if (llamaCtx->ctx) {
         llama_free(llamaCtx->ctx);
     }
