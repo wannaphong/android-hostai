@@ -271,7 +271,7 @@ class MainActivity : AppCompatActivity() {
         // Wait for server to stop, then open file picker
         binding.root.postDelayed({
             selectModelFile()
-        }, 600)
+        }, 500)
     }
     
     private fun selectModelFile() {
