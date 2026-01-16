@@ -84,8 +84,8 @@ class ApiServerService : Service() {
         }
         
         return try {
-            // Initialize model
-            model = LlamaModel().apply {
+            // Initialize model with ContentResolver
+            model = LlamaModel(contentResolver).apply {
                 loadModel(modelPath)
             }
             
