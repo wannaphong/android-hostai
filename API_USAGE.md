@@ -78,6 +78,38 @@ curl http://<phone-ip>:8080/v1/chat/completions \
 }
 ```
 
+#### Chat Completions with Streaming
+
+Enable streaming to receive tokens as they are generated:
+
+```bash
+curl http://<phone-ip>:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "llama-mock-model",
+    "messages": [
+      {"role": "user", "content": "Tell me a story"}
+    ],
+    "stream": true,
+    "temperature": 0.7,
+    "max_tokens": 100
+  }'
+```
+
+**Response (Server-Sent Events):**
+```
+data: {"id":"chatcmpl-1705384800123","object":"chat.completion.chunk","created":1705384800,"model":"llama-mock-model","choices":[{"index":0,"delta":{"content":"Once"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-1705384800123","object":"chat.completion.chunk","created":1705384800,"model":"llama-mock-model","choices":[{"index":0,"delta":{"content":" upon"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-1705384800123","object":"chat.completion.chunk","created":1705384800,"model":"llama-mock-model","choices":[{"index":0,"delta":{"content":" a"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-1705384800123","object":"chat.completion.chunk","created":1705384800,"model":"llama-mock-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: [DONE]
+```
+
+
 ### 3. Text Completions
 
 Generate text completions.
@@ -114,6 +146,36 @@ curl http://<phone-ip>:8080/v1/completions \
   }
 }
 ```
+
+#### Text Completions with Streaming
+
+Enable streaming to receive tokens as they are generated:
+
+```bash
+curl http://<phone-ip>:8080/v1/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "llama-mock-model",
+    "prompt": "Once upon a time",
+    "stream": true,
+    "temperature": 0.7,
+    "max_tokens": 100
+  }'
+```
+
+**Response (Server-Sent Events):**
+```
+data: {"id":"cmpl-1705384800123","object":"text_completion","created":1705384800,"model":"llama-mock-model","choices":[{"text":"there","index":0,"finish_reason":null}]}
+
+data: {"id":"cmpl-1705384800123","object":"text_completion","created":1705384800,"model":"llama-mock-model","choices":[{"text":" was","index":0,"finish_reason":null}]}
+
+data: {"id":"cmpl-1705384800123","object":"text_completion","created":1705384800,"model":"llama-mock-model","choices":[{"text":" a","index":0,"finish_reason":null}]}
+
+data: {"id":"cmpl-1705384800123","object":"text_completion","created":1705384800,"model":"llama-mock-model","choices":[{"text":"","index":0,"finish_reason":"stop"}]}
+
+data: [DONE]
+```
+
 
 ### 4. Health Check
 
@@ -156,6 +218,21 @@ response = client.chat.completions.create(
 )
 
 print(response.choices[0].message.content)
+
+# Chat completion with streaming
+stream = client.chat.completions.create(
+    model="llama-mock-model",
+    messages=[
+        {"role": "user", "content": "Tell me a story"}
+    ],
+    stream=True,
+    temperature=0.7,
+    max_tokens=100
+)
+
+for chunk in stream:
+    if chunk.choices[0].delta.content is not None:
+        print(chunk.choices[0].delta.content, end='')
 ```
 
 ### JavaScript/Node.js
@@ -186,10 +263,45 @@ async function chatCompletion(message) {
   return data.choices[0].message.content;
 }
 
+// Streaming chat completion
+async function chatCompletionStream(message) {
+  const response = await fetch(`${baseUrl}/v1/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'llama-mock-model',
+      messages: [
+        { role: 'user', content: message }
+      ],
+      stream: true,
+      temperature: 0.7,
+      max_tokens: 100
+    })
+  });
+
+  const reader = response.body;
+  reader.on('data', (chunk) => {
+    const lines = chunk.toString().split('\n');
+    for (const line of lines) {
+      if (line.startsWith('data: ') && !line.includes('[DONE]')) {
+        const data = JSON.parse(line.substring(6));
+        if (data.choices[0].delta.content) {
+          process.stdout.write(data.choices[0].delta.content);
+        }
+      }
+    }
+  });
+}
+
 // Usage
 chatCompletion('Hello!')
   .then(response => console.log(response))
   .catch(error => console.error(error));
+
+// Streaming usage
+chatCompletionStream('Tell me a story');
 ```
 
 ### Python (requests library)
@@ -218,8 +330,39 @@ def chat_completion(message):
     data = response.json()
     return data['choices'][0]['message']['content']
 
+# Streaming chat completion
+def chat_completion_stream(message):
+    response = requests.post(
+        f'{base_url}/v1/chat/completions',
+        headers={'Content-Type': 'application/json'},
+        json={
+            'model': 'llama-mock-model',
+            'messages': [
+                {'role': 'user', 'content': message}
+            ],
+            'stream': True,
+            'temperature': 0.7,
+            'max_tokens': 100
+        },
+        stream=True
+    )
+    
+    for line in response.iter_lines():
+        if line:
+            line = line.decode('utf-8')
+            if line.startswith('data: ') and '[DONE]' not in line:
+                data = json.loads(line[6:])
+                if 'choices' in data and data['choices']:
+                    delta = data['choices'][0].get('delta', {})
+                    if 'content' in delta:
+                        print(delta['content'], end='', flush=True)
+
 # Usage
 print(chat_completion('Hello!'))
+
+# Streaming usage
+print("\nStreaming response:")
+chat_completion_stream('Tell me a story')
 ```
 
 ### Go
@@ -299,7 +442,7 @@ func main() {
 - `temperature` (float, 0-2): Controls randomness. Lower = more deterministic
 - `max_tokens` (integer): Maximum tokens to generate
 - `top_p` (float, 0-1): Nucleus sampling parameter
-- `stream` (boolean): Whether to stream the response (currently not fully supported)
+- `stream` (boolean): Whether to stream the response using Server-Sent Events (SSE). Default: false
 
 ### Chat Completions Specific
 
