@@ -279,7 +279,7 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel) : Na
                     }
                     
                     // Wait a bit for the last token to be processed
-                    Thread.sleep(100)
+                    kotlinx.coroutines.delay(100)
                     
                     // Send final chunk with finish_reason
                     val finalChunk = mapOf(
@@ -374,7 +374,7 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel) : Na
                     }
                     
                     // Wait a bit for the last token to be processed
-                    Thread.sleep(100)
+                    kotlinx.coroutines.delay(100)
                     
                     // Send final chunk with finish_reason
                     val finalChunk = mapOf(
