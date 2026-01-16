@@ -60,7 +60,7 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
             LogManager.e(TAG, "Error handling request to $uri", e)
             newFixedLengthResponse(
                 Response.Status.INTERNAL_ERROR,
-                "application/json",
+                "application/json; charset=utf-8",
                 gson.toJson(mapOf("error" to mapOf("message" to e.message)))
             )
         }
@@ -119,7 +119,7 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
         )
         return newFixedLengthResponse(
             Response.Status.OK,
-            "application/json",
+            "application/json; charset=utf-8",
             gson.toJson(health)
         )
     }
@@ -194,7 +194,7 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
         
         return newFixedLengthResponse(
             Response.Status.OK,
-            "application/json",
+            "application/json; charset=utf-8",
             gson.toJson(models)
         )
     }
@@ -253,7 +253,7 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
         
         return newFixedLengthResponse(
             Response.Status.OK,
-            "application/json",
+            "application/json; charset=utf-8",
             gson.toJson(response)
         )
     }
@@ -297,7 +297,7 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
         
         return newFixedLengthResponse(
             Response.Status.OK,
-            "application/json",
+            "application/json; charset=utf-8",
             gson.toJson(response)
         )
     }
@@ -392,7 +392,7 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
             LogManager.e(TAG, "Failed to start chat streaming", e)
             return newFixedLengthResponse(
                 Response.Status.INTERNAL_ERROR,
-                "application/json",
+                "application/json; charset=utf-8",
                 gson.toJson(mapOf("error" to mapOf("message" to e.message)))
             )
         }
@@ -486,7 +486,7 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
             LogManager.e(TAG, "Failed to start completion streaming", e)
             return newFixedLengthResponse(
                 Response.Status.INTERNAL_ERROR,
-                "application/json",
+                "application/json; charset=utf-8",
                 gson.toJson(mapOf("error" to mapOf("message" to e.message)))
             )
         }
