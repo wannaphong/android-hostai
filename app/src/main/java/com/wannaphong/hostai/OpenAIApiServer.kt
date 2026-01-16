@@ -337,9 +337,10 @@ class OpenAIApiServer(
     ) {
         LogManager.i(TAG, "Starting chat streaming response")
         
-        call.response.headers.append(HttpHeaders.ContentType, "text/event-stream")
-        call.response.headers.append(HttpHeaders.CacheControl, "no-cache")
-        call.response.headers.append(HttpHeaders.Connection, "keep-alive")
+        // Set headers before starting response
+        call.response.header(HttpHeaders.ContentType, "text/event-stream")
+        call.response.header(HttpHeaders.CacheControl, "no-cache")
+        call.response.header(HttpHeaders.Connection, "keep-alive")
         
         call.respondOutputStream {
             val writer = this.writer(Charsets.UTF_8)
@@ -482,9 +483,10 @@ class OpenAIApiServer(
     ) {
         LogManager.i(TAG, "Starting completion streaming response")
         
-        call.response.headers.append(HttpHeaders.ContentType, "text/event-stream")
-        call.response.headers.append(HttpHeaders.CacheControl, "no-cache")
-        call.response.headers.append(HttpHeaders.Connection, "keep-alive")
+        // Set headers before starting response
+        call.response.header(HttpHeaders.ContentType, "text/event-stream")
+        call.response.header(HttpHeaders.CacheControl, "no-cache")
+        call.response.header(HttpHeaders.Connection, "keep-alive")
         
         call.respondOutputStream {
             val writer = this.writer(Charsets.UTF_8)
