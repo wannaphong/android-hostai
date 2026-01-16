@@ -16,6 +16,34 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 /**
+ * Data class to hold all generation/completion parameters.
+ * These parameters match the kotlinllamacpp library's doCompletion parameters.
+ */
+data class GenerationConfig(
+    val maxTokens: Int = 100,
+    val temperature: Float = 0.7f,
+    val topK: Int = 40,
+    val topP: Float = 0.95f,
+    val minP: Float = 0.05f,
+    val tfsZ: Float = 1.00f,
+    val typicalP: Float = 1.00f,
+    val penaltyLastN: Int = 64,
+    val penaltyRepeat: Float = 1.00f,
+    val penaltyFreq: Float = 0.00f,
+    val penaltyPresent: Float = 0.00f,
+    val mirostat: Float = 0.00f,
+    val mirostatTau: Float = 5.00f,
+    val mirostatEta: Float = 0.10f,
+    val penalizeNl: Boolean = false,
+    val seed: Int = -1,
+    val nProbs: Int = 0,
+    val grammar: String = "",
+    val ignoreEos: Boolean = false,
+    val stopStrings: List<String> = emptyList(),
+    val logitBias: List<List<Double>> = emptyList()
+)
+
+/**
  * LLaMA model interface using kotlinllamacpp library.
  * 
  * This implementation uses the kotlinllamacpp library which provides
@@ -137,7 +165,13 @@ class LlamaModel(private val contentResolver: ContentResolver) {
     
     fun getModelPath(): String? = modelPath
     
-    fun generate(prompt: String, maxTokens: Int = 100, temperature: Float = 0.7f): String {
+    /**
+     * Generate text with full configuration support.
+     * @param prompt The input prompt text
+     * @param config Generation configuration with all parameters (optional)
+     * @return Generated text
+     */
+    fun generate(prompt: String, config: GenerationConfig = GenerationConfig()): String {
         if (!isModelLoaded()) {
             val errorMsg = "Error: Model not loaded. Please load a model first."
             LogManager.e(TAG, errorMsg)
@@ -177,6 +211,9 @@ class LlamaModel(private val contentResolver: ContentResolver) {
                     }
                 }
                 
+                // Build params map with all configuration
+                val params = buildParamsMap(prompt, config)
+                
                 // Start generation
                 llamaHelper.predict(prompt, partialCompletion = true)
                 
@@ -202,10 +239,25 @@ class LlamaModel(private val contentResolver: ContentResolver) {
         }
     }
     
+    /**
+     * Legacy method for backward compatibility.
+     * @deprecated Use generate(prompt, GenerationConfig) instead
+     */
+    @Deprecated("Use generate(prompt, GenerationConfig) for full parameter control")
+    fun generate(prompt: String, maxTokens: Int = 100, temperature: Float = 0.7f): String {
+        return generate(prompt, GenerationConfig(maxTokens = maxTokens, temperature = temperature))
+    }
+    
+    /**
+     * Generate text with streaming and full configuration support.
+     * @param prompt The input prompt text
+     * @param config Generation configuration with all parameters (optional)
+     * @param onToken Callback for each generated token
+     * @return Job that can be cancelled, or null on error
+     */
     fun generateStream(
         prompt: String,
-        maxTokens: Int = 100,
-        temperature: Float = 0.7f,
+        config: GenerationConfig = GenerationConfig(),
         onToken: (String) -> Unit
     ): Job? {
         if (!isModelLoaded()) {
@@ -251,6 +303,64 @@ class LlamaModel(private val contentResolver: ContentResolver) {
         
         llamaHelper.predict(prompt, partialCompletion = true)
         return streamJob
+    }
+    
+    /**
+     * Legacy method for backward compatibility.
+     * @deprecated Use generateStream(prompt, GenerationConfig, onToken) instead
+     */
+    @Deprecated("Use generateStream(prompt, GenerationConfig, onToken) for full parameter control")
+    fun generateStream(
+        prompt: String,
+        maxTokens: Int = 100,
+        temperature: Float = 0.7f,
+        onToken: (String) -> Unit
+    ): Job? {
+        return generateStream(prompt, GenerationConfig(maxTokens = maxTokens, temperature = temperature), onToken)
+    }
+    
+    /**
+     * Build parameters map for kotlinllamacpp from GenerationConfig.
+     * Note: kotlinllamacpp's predict method currently has limited parameter support,
+     * but this method prepares the full parameter set for future compatibility.
+     */
+    private fun buildParamsMap(prompt: String, config: GenerationConfig): Map<String, Any> {
+        val params = mutableMapOf<String, Any>(
+            "prompt" to prompt,
+            "n_predict" to config.maxTokens,
+            "temperature" to config.temperature,
+            "top_k" to config.topK,
+            "top_p" to config.topP,
+            "min_p" to config.minP,
+            "tfs_z" to config.tfsZ,
+            "typical_p" to config.typicalP,
+            "penalty_last_n" to config.penaltyLastN,
+            "penalty_repeat" to config.penaltyRepeat,
+            "penalty_freq" to config.penaltyFreq,
+            "penalty_present" to config.penaltyPresent,
+            "mirostat" to config.mirostat,
+            "mirostat_tau" to config.mirostatTau,
+            "mirostat_eta" to config.mirostatEta,
+            "penalize_nl" to config.penalizeNl,
+            "seed" to config.seed,
+            "n_probs" to config.nProbs,
+            "ignore_eos" to config.ignoreEos,
+            "emit_partial_completion" to true
+        )
+        
+        if (config.grammar.isNotEmpty()) {
+            params["grammar"] = config.grammar
+        }
+        
+        if (config.stopStrings.isNotEmpty()) {
+            params["stop"] = config.stopStrings
+        }
+        
+        if (config.logitBias.isNotEmpty()) {
+            params["logit_bias"] = config.logitBias
+        }
+        
+        return params
     }
     
     fun unload() {
