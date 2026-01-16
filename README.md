@@ -87,15 +87,30 @@ print(response.choices[0].message.content)
 
 ## Current Implementation
 
-**Note:** This is a functional implementation with a mock LLaMA model. The app demonstrates the full OpenAI-compatible API server functionality, but uses simulated responses instead of actual LLaMA inference.
+**Note:** This implementation now includes JNI bindings for llama.cpp integration. The native interface is in place and functional, but requires llama.cpp source files to be added for complete functionality.
 
-### To Add Real llama.cpp Integration:
+### Architecture:
 
-1. Add llama.cpp as a native library (C++ via JNI)
-2. Configure NDK and CMake in build.gradle
-3. Replace `LlamaModel.kt` with JNI bindings to llama.cpp
-4. Add actual GGUF model files to app storage
-5. Implement model loading and inference via native code
+- **MainActivity** - User interface for controlling the server
+- **ApiServerService** - Foreground service that runs the HTTP server
+- **OpenAIApiServer** - NanoHTTPD-based web server with OpenAI-compatible endpoints
+- **LlamaModel** - Model interface with JNI bindings to native code
+- **Native Layer** - C++ JNI wrapper ready for llama.cpp integration (app/src/main/cpp/)
+
+### To Complete the llama.cpp Integration:
+
+The JNI interface is already set up. To add actual llama.cpp inference:
+
+1. Add llama.cpp source files to `app/src/main/cpp/`
+   - Option A: As a git submodule
+   - Option B: Copy source files directly
+   - Option C: Link to pre-built library
+2. Update `CMakeLists.txt` to compile llama.cpp
+3. Uncomment the actual llama.cpp API calls in `llama_jni.cpp`
+4. Add GGUF model files to app storage
+5. Test with actual model inference
+
+See `app/src/main/cpp/README.md` for detailed integration instructions.
 
 ## Architecture
 
