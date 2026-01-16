@@ -43,8 +43,30 @@ file(GLOB LLAMA_SOURCES
     ${LLAMA_DIR}/src/llama*.cpp
 )
 
+# Get git commit hash for version info
+execute_process(
+    COMMAND git rev-parse --short HEAD
+    WORKING_DIRECTORY ${LLAMA_DIR}
+    OUTPUT_VARIABLE GGML_BUILD_COMMIT
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+)
+
+# Set default version if git command fails
+if(NOT GGML_BUILD_COMMIT)
+    set(GGML_BUILD_COMMIT "unknown")
+endif()
+
+set(GGML_VERSION "0.9.5")
+
 # Create llama static library
 add_library(llama STATIC ${GGML_SOURCES} ${LLAMA_SOURCES})
+
+# Define version macros required by ggml
+target_compile_definitions(llama PRIVATE 
+    GGML_VERSION="${GGML_VERSION}"
+    GGML_COMMIT="${GGML_BUILD_COMMIT}"
+)
 
 # Enable NEON for ARM architectures
 if(ANDROID_ABI STREQUAL "armeabi-v7a" OR ANDROID_ABI STREQUAL "arm64-v8a")
