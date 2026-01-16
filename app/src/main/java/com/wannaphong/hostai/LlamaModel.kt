@@ -213,6 +213,18 @@ class LlamaModel(private val contentResolver: ContentResolver) {
             return null
         }
         
+        // For mock model, simulate streaming
+        if (modelPath == "mock-model") {
+            return scope.launch {
+                val mockResponse = "This is a mock streaming response from the model. "
+                val words = mockResponse.split(" ")
+                for (word in words) {
+                    onToken("$word ")
+                    kotlinx.coroutines.delay(50) // Small delay to simulate streaming
+                }
+            }
+        }
+        
         // For streaming, we'll use kotlinllamacpp's token callback
         val streamJob = scope.launch {
             try {

@@ -6,6 +6,12 @@ import com.google.gson.GsonBuilder
 import com.google.gson.JsonObject
 import fi.iki.elonen.NanoHTTPD
 import java.io.IOException
+import java.io.PipedInputStream
+import java.io.PipedOutputStream
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
 /**
  * OpenAI-compatible API server implementation using NanoHTTPD.
@@ -145,7 +151,7 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel) : Na
         LogManager.d(TAG, "Chat completion - stream: $stream, maxTokens: $maxTokens, temp: $temperature")
         
         if (stream) {
-            return handleStreamingResponse(prompt, maxTokens, temperature)
+            return handleChatStreamingResponse(prompt, maxTokens, temperature)
         }
         
         // Generate response
@@ -193,7 +199,7 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel) : Na
         val temperature = request.get("temperature")?.asFloat ?: 0.7f
         
         if (stream) {
-            return handleStreamingResponse(prompt, maxTokens, temperature)
+            return handleCompletionStreamingResponse(prompt, maxTokens, temperature)
         }
         
         // Generate response
@@ -225,30 +231,196 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel) : Na
         )
     }
     
-    private fun handleStreamingResponse(prompt: String, maxTokens: Int, temperature: Float): Response {
-        // Note: SSE streaming is complex with NanoHTTPD
-        // For simplicity, returning a non-streaming response with a note
-        val completion = model.generate(prompt, maxTokens, temperature)
+    private fun handleChatStreamingResponse(prompt: String, maxTokens: Int, temperature: Float): Response {
+        LogManager.i(TAG, "Starting chat streaming response")
         
-        val response = mapOf(
-            "id" to "cmpl-${System.currentTimeMillis()}",
-            "object" to "text_completion",
-            "created" to System.currentTimeMillis() / 1000,
-            "model" to model.getModelName(),
-            "choices" to listOf(
-                mapOf(
-                    "text" to completion,
-                    "index" to 0,
-                    "finish_reason" to "stop"
-                )
+        try {
+            val pipedOutputStream = PipedOutputStream()
+            val pipedInputStream = PipedInputStream(pipedOutputStream)
+            
+            // Start streaming in a coroutine
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val writer = pipedOutputStream.bufferedWriter()
+                    val id = "chatcmpl-${System.currentTimeMillis()}"
+                    val created = System.currentTimeMillis() / 1000
+                    var tokenCount = 0
+                    
+                    // Start the stream
+                    model.generateStream(prompt, maxTokens, temperature) { token ->
+                        try {
+                            tokenCount++
+                            
+                            // Format according to OpenAI SSE format for chat
+                            val chunk = mapOf(
+                                "id" to id,
+                                "object" to "chat.completion.chunk",
+                                "created" to created,
+                                "model" to model.getModelName(),
+                                "choices" to listOf(
+                                    mapOf(
+                                        "index" to 0,
+                                        "delta" to mapOf(
+                                            "content" to token
+                                        ),
+                                        "finish_reason" to null
+                                    )
+                                )
+                            )
+                            
+                            // Write SSE format: "data: {json}\n\n"
+                            writer.write("data: ${gson.toJson(chunk)}\n\n")
+                            writer.flush()
+                            
+                            LogManager.d(TAG, "Streamed token #$tokenCount")
+                        } catch (e: Exception) {
+                            LogManager.e(TAG, "Error writing token to stream", e)
+                        }
+                    }
+                    
+                    // Wait a bit for the last token to be processed
+                    Thread.sleep(100)
+                    
+                    // Send final chunk with finish_reason
+                    val finalChunk = mapOf(
+                        "id" to id,
+                        "object" to "chat.completion.chunk",
+                        "created" to created,
+                        "model" to model.getModelName(),
+                        "choices" to listOf(
+                            mapOf(
+                                "index" to 0,
+                                "delta" to mapOf<String, String>(),
+                                "finish_reason" to "stop"
+                            )
+                        )
+                    )
+                    writer.write("data: ${gson.toJson(finalChunk)}\n\n")
+                    writer.write("data: [DONE]\n\n")
+                    writer.flush()
+                    writer.close()
+                    
+                    LogManager.i(TAG, "Chat streaming completed with $tokenCount tokens")
+                } catch (e: Exception) {
+                    LogManager.e(TAG, "Error in chat streaming", e)
+                    pipedOutputStream.close()
+                }
+            }
+            
+            // Return response with text/event-stream content type
+            val response = newFixedLengthResponse(
+                Response.Status.OK,
+                "text/event-stream",
+                pipedInputStream,
+                -1 // Unknown length for streaming
             )
-        )
+            response.addHeader("Cache-Control", "no-cache")
+            response.addHeader("Connection", "keep-alive")
+            return response
+            
+        } catch (e: Exception) {
+            LogManager.e(TAG, "Failed to start chat streaming", e)
+            return newFixedLengthResponse(
+                Response.Status.INTERNAL_ERROR,
+                "application/json",
+                gson.toJson(mapOf("error" to mapOf("message" to e.message)))
+            )
+        }
+    }
+    
+    private fun handleCompletionStreamingResponse(prompt: String, maxTokens: Int, temperature: Float): Response {
+        LogManager.i(TAG, "Starting completion streaming response")
         
-        return newFixedLengthResponse(
-            Response.Status.OK,
-            "application/json",
-            gson.toJson(response)
-        )
+        try {
+            val pipedOutputStream = PipedOutputStream()
+            val pipedInputStream = PipedInputStream(pipedOutputStream)
+            
+            // Start streaming in a coroutine
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val writer = pipedOutputStream.bufferedWriter()
+                    val id = "cmpl-${System.currentTimeMillis()}"
+                    val created = System.currentTimeMillis() / 1000
+                    var tokenCount = 0
+                    
+                    // Start the stream
+                    model.generateStream(prompt, maxTokens, temperature) { token ->
+                        try {
+                            tokenCount++
+                            
+                            // Format according to OpenAI SSE format for completions
+                            val chunk = mapOf(
+                                "id" to id,
+                                "object" to "text_completion",
+                                "created" to created,
+                                "model" to model.getModelName(),
+                                "choices" to listOf(
+                                    mapOf(
+                                        "text" to token,
+                                        "index" to 0,
+                                        "finish_reason" to null
+                                    )
+                                )
+                            )
+                            
+                            // Write SSE format: "data: {json}\n\n"
+                            writer.write("data: ${gson.toJson(chunk)}\n\n")
+                            writer.flush()
+                            
+                            LogManager.d(TAG, "Streamed token #$tokenCount")
+                        } catch (e: Exception) {
+                            LogManager.e(TAG, "Error writing token to stream", e)
+                        }
+                    }
+                    
+                    // Wait a bit for the last token to be processed
+                    Thread.sleep(100)
+                    
+                    // Send final chunk with finish_reason
+                    val finalChunk = mapOf(
+                        "id" to id,
+                        "object" to "text_completion",
+                        "created" to created,
+                        "model" to model.getModelName(),
+                        "choices" to listOf(
+                            mapOf(
+                                "text" to "",
+                                "index" to 0,
+                                "finish_reason" to "stop"
+                            )
+                        )
+                    )
+                    writer.write("data: ${gson.toJson(finalChunk)}\n\n")
+                    writer.write("data: [DONE]\n\n")
+                    writer.flush()
+                    writer.close()
+                    
+                    LogManager.i(TAG, "Completion streaming completed with $tokenCount tokens")
+                } catch (e: Exception) {
+                    LogManager.e(TAG, "Error in completion streaming", e)
+                    pipedOutputStream.close()
+                }
+            }
+            
+            // Return response with text/event-stream content type
+            val response = newFixedLengthResponse(
+                Response.Status.OK,
+                "text/event-stream",
+                pipedInputStream,
+                -1 // Unknown length for streaming
+            )
+            response.addHeader("Cache-Control", "no-cache")
+            response.addHeader("Connection", "keep-alive")
+            return response
+            
+        } catch (e: Exception) {
+            LogManager.e(TAG, "Failed to start completion streaming", e)
+            return newFixedLengthResponse(
+                Response.Status.INTERNAL_ERROR,
+                "application/json",
+                gson.toJson(mapOf("error" to mapOf("message" to e.message)))
+            )
+        }
     }
     
     private fun buildPromptFromMessages(messages: com.google.gson.JsonArray): String {
