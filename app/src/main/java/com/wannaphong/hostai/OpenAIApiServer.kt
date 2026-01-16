@@ -30,6 +30,8 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
     
     companion object {
         private const val TAG = "OpenAIApiServer"
+        // Maximum request body size (10 MB) to prevent memory exhaustion attacks
+        private const val MAX_REQUEST_BODY_SIZE = 10 * 1024 * 1024
     }
     
     override fun serve(session: IHTTPSession): Response {
@@ -60,7 +62,7 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
             LogManager.e(TAG, "Error handling request to $uri", e)
             newFixedLengthResponse(
                 Response.Status.INTERNAL_ERROR,
-                "application/json",
+                "application/json; charset=utf-8",
                 gson.toJson(mapOf("error" to mapOf("message" to e.message)))
             )
         }
@@ -119,7 +121,7 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
         )
         return newFixedLengthResponse(
             Response.Status.OK,
-            "application/json",
+            "application/json; charset=utf-8",
             gson.toJson(health)
         )
     }
@@ -194,7 +196,7 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
         
         return newFixedLengthResponse(
             Response.Status.OK,
-            "application/json",
+            "application/json; charset=utf-8",
             gson.toJson(models)
         )
     }
@@ -215,6 +217,9 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
         // Build prompt from messages
         val prompt = buildPromptFromMessages(messages)
         
+        // Log a preview of the prompt to verify character encoding
+        val promptPreview = if (prompt.length > 100) prompt.take(100) + "..." else prompt
+        LogManager.d(TAG, "Prompt preview: $promptPreview")
         LogManager.d(TAG, "Chat completion - stream: $stream, maxTokens: ${config.maxTokens}, temp: ${config.temperature}")
         
         if (stream) {
@@ -250,7 +255,7 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
         
         return newFixedLengthResponse(
             Response.Status.OK,
-            "application/json",
+            "application/json; charset=utf-8",
             gson.toJson(response)
         )
     }
@@ -294,7 +299,7 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
         
         return newFixedLengthResponse(
             Response.Status.OK,
-            "application/json",
+            "application/json; charset=utf-8",
             gson.toJson(response)
         )
     }
@@ -389,7 +394,7 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
             LogManager.e(TAG, "Failed to start chat streaming", e)
             return newFixedLengthResponse(
                 Response.Status.INTERNAL_ERROR,
-                "application/json",
+                "application/json; charset=utf-8",
                 gson.toJson(mapOf("error" to mapOf("message" to e.message)))
             )
         }
@@ -483,7 +488,7 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
             LogManager.e(TAG, "Failed to start completion streaming", e)
             return newFixedLengthResponse(
                 Response.Status.INTERNAL_ERROR,
-                "application/json",
+                "application/json; charset=utf-8",
                 gson.toJson(mapOf("error" to mapOf("message" to e.message)))
             )
         }
@@ -515,13 +520,55 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
     }
     
     private fun getRequestBody(session: IHTTPSession): String {
-        val map = mutableMapOf<String, String>()
-        try {
-            session.parseBody(map)
+        return try {
+            // Read the input stream directly with UTF-8 encoding to properly handle
+            // multibyte characters like Thai, Chinese, Japanese, etc.
+            
+            // HTTP headers are case-insensitive per RFC, NanoHTTPD normalizes to lowercase
+            // But we check both for defensive programming
+            val contentLength = (session.headers["content-length"] 
+                ?: session.headers["Content-Length"])?.toIntOrNull() ?: 0
+            
+            if (contentLength > 0) {
+                // Security: Prevent memory exhaustion attacks by limiting request body size
+                if (contentLength > MAX_REQUEST_BODY_SIZE) {
+                    LogManager.w(TAG, "Request body too large: $contentLength bytes (max: $MAX_REQUEST_BODY_SIZE)")
+                    throw IOException("Request body too large")
+                }
+                
+                // Read the request body directly from input stream with UTF-8
+                val buffer = ByteArray(contentLength)
+                var bytesRead = 0
+                val inputStream = session.inputStream
+                
+                // Manual read loop (can't use readNBytes as project targets Java 8)
+                // Read until we have all the bytes or reach EOF
+                while (bytesRead < contentLength) {
+                    val read = inputStream.read(buffer, bytesRead, contentLength - bytesRead)
+                    if (read == -1) {
+                        // Reached EOF before reading all expected bytes - this is a malformed request
+                        val errorMsg = "Incomplete request body: expected $contentLength bytes, got $bytesRead"
+                        LogManager.w(TAG, errorMsg)
+                        throw IOException(errorMsg)
+                    }
+                    bytesRead += read
+                }
+                
+                // Decode with UTF-8 to properly handle multibyte characters
+                String(buffer, 0, bytesRead, Charsets.UTF_8)
+            } else {
+                // Fallback to parseBody for empty or unknown content-length
+                // NOTE: This fallback will use system default charset and may not properly
+                // handle multibyte characters. However, legitimate POST requests from
+                // HTTP clients should always include Content-Length header.
+                val map = mutableMapOf<String, String>()
+                session.parseBody(map)
+                map["postData"] ?: ""
+            }
         } catch (e: IOException) {
             Log.e(TAG, "Failed to parse request body", e)
             LogManager.e(TAG, "Failed to parse request body", e)
+            ""
         }
-        return map["postData"] ?: ""
     }
 }
