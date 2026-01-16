@@ -331,9 +331,11 @@ class MainActivity : AppCompatActivity() {
             
             // Validate file name and extension
             val validFileName = fileName
-            if (validFileName == null || !validFileName.endsWith(".gguf", ignoreCase = true)) {
+            if (validFileName == null || 
+                (!validFileName.endsWith(".gguf", ignoreCase = true) && 
+                 !validFileName.endsWith(".litertlm", ignoreCase = true))) {
                 LogManager.w("MainActivity", "Invalid file type selected: $fileName")
-                Toast.makeText(this, "Please select a GGUF model file", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Please select a GGUF or LiteRT model file (.gguf or .litertlm)", Toast.LENGTH_SHORT).show()
                 return
             }
             
@@ -354,18 +356,11 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             
-            // Create a content URI from the internal file using FileProvider
-            val contentUri = FileProvider.getUriForFile(
-                this,
-                "${applicationContext.packageName}.fileprovider",
-                internalFile
-            )
-            
-            selectedModelPath = contentUri.toString()
+            // Use the internal file path directly for LiteRT
+            selectedModelPath = internalFile.absolutePath
             selectedModelName = validFileName
             
             LogManager.i("MainActivity", "Model file copied successfully to: ${internalFile.absolutePath}")
-            LogManager.i("MainActivity", "Content URI created: $contentUri")
             Toast.makeText(this, "Model selected: $validFileName", Toast.LENGTH_SHORT).show()
             updateUI()
             

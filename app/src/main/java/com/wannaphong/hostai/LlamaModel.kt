@@ -1,77 +1,52 @@
 package com.wannaphong.hostai
 
 import android.content.ContentResolver
-import android.net.Uri
-import android.provider.OpenableColumns
 import android.util.Log
+import com.google.ai.edge.litertlm.Backend
+import com.google.ai.edge.litertlm.Conversation
+import com.google.ai.edge.litertlm.ConversationConfig
+import com.google.ai.edge.litertlm.Engine
+import com.google.ai.edge.litertlm.EngineConfig
+import com.google.ai.edge.litertlm.Message
+import com.google.ai.edge.litertlm.MessageCallback
+import com.google.ai.edge.litertlm.SamplerConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.launch
-import org.nehuatl.llamacpp.LlamaHelper
 import java.io.File
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 
 /**
  * Data class to hold all generation/completion parameters.
- * These parameters match the kotlinllamacpp library's doCompletion parameters.
+ * These parameters are compatible with LiteRT's SamplerConfig.
  */
 data class GenerationConfig(
     val maxTokens: Int = 100,
-    val temperature: Float = 0.7f,
+    val temperature: Double = 0.7,
     val topK: Int = 40,
-    val topP: Float = 0.95f,
-    val minP: Float = 0.05f,
-    val tfsZ: Float = 1.00f,
-    val typicalP: Float = 1.00f,
-    val penaltyLastN: Int = 64,
-    val penaltyRepeat: Float = 1.00f,
-    val penaltyFreq: Float = 0.00f,
-    val penaltyPresent: Float = 0.00f,
-    val mirostat: Float = 0.00f,
-    val mirostatTau: Float = 5.00f,
-    val mirostatEta: Float = 0.10f,
-    val penalizeNl: Boolean = false,
-    val seed: Int = -1,
-    val nProbs: Int = 0,
-    val grammar: String = "",
-    val ignoreEos: Boolean = false,
-    val stopStrings: List<String> = emptyList(),
-    val logitBias: List<List<Double>> = emptyList()
+    val topP: Double = 0.95,
+    val seed: Int = -1
 )
 
 /**
- * LLaMA model interface using kotlinllamacpp library.
+ * LLM model interface using LiteRT (LLM) library.
  * 
- * This implementation uses the kotlinllamacpp library which provides
- * native llama.cpp bindings optimized for Android/ARM devices.
+ * This implementation uses the LiteRT library which provides
+ * native LLM inference optimized for Android/ARM devices with GPU acceleration.
  */
 class LlamaModel(private val contentResolver: ContentResolver) {
-    private var modelName = "llama-model"
+    private var modelName = "litert-model"
     private var modelPath: String? = null
     private var isLoaded = false
     
-    // Internal scope and flow for kotlinllamacpp
+    // LiteRT components
+    private var engine: Engine? = null
+    private var conversation: Conversation? = null
     private val scope = CoroutineScope(Dispatchers.IO)
-    private val sharedFlow = MutableSharedFlow<LlamaHelper.LLMEvent>(
-        replay = 0,
-        extraBufferCapacity = 64
-    )
-    
-    private val llamaHelper by lazy {
-        LlamaHelper(
-            contentResolver = contentResolver,
-            scope = scope,
-            sharedFlow = sharedFlow
-        )
-    }
     
     companion object {
         private const val TAG = "LlamaModel"
-        private const val DEFAULT_CONTEXT_LENGTH = 2048
+        private const val DEFAULT_MAX_TOKENS = 2048
     }
     
     fun loadModel(modelPath: String): Boolean {
@@ -87,71 +62,42 @@ class LlamaModel(private val contentResolver: ContentResolver) {
             return true
         }
         
-        // Check if it's a content URI or file path
-        if (modelPath.startsWith("content://")) {
-            // It's a content URI - query for file info
-            try {
-                val uri = Uri.parse(modelPath)
-                contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-                    val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                    val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
-                    if (cursor.moveToFirst() && nameIndex >= 0 && sizeIndex >= 0) {
-                        val name = cursor.getString(nameIndex)
-                        if (name != null) {
-                            modelName = name
-                        }
-                        val fileSize = cursor.getLong(sizeIndex)
-                        LogManager.i(TAG, "Model file info: $modelName (${fileSize / 1024 / 1024} MB)")
-                    }
-                }
-            } catch (e: Exception) {
-                LogManager.w(TAG, "Could not query content URI for file info: ${e.message}")
-            }
+        // It's a file path
+        val file = File(modelPath)
+        if (file.exists()) {
+            modelName = file.name
+            LogManager.i(TAG, "Model file found: $modelName (${file.length() / 1024 / 1024} MB)")
         } else {
-            // It's a file path
-            val file = File(modelPath)
-            if (file.exists()) {
-                modelName = file.name
-                LogManager.i(TAG, "Model file found: $modelName (${file.length() / 1024 / 1024} MB)")
-            } else {
-                LogManager.e(TAG, "Model file not found at path: $modelPath")
-            }
+            LogManager.e(TAG, "Model file not found at path: $modelPath")
+            return false
         }
         
         return try {
-            val latch = CountDownLatch(1)
-            var loadSuccess = false
+            LogManager.i(TAG, "Initializing LiteRT with model: $modelName")
             
-            LogManager.i(TAG, "Initializing kotlinllamacpp with context length: $DEFAULT_CONTEXT_LENGTH")
+            // Create engine config with CPU backend by default for compatibility
+            // GPU backend can provide better performance on supported devices
+            // To enable GPU: change Backend.CPU to Backend.GPU
+            val engineConfig = EngineConfig(
+                modelPath = modelPath,
+                backend = Backend.CPU,  // Start with CPU for universal compatibility
+                maxNumTokens = DEFAULT_MAX_TOKENS
+            )
             
-            // Load model using kotlinllamacpp
-            llamaHelper.load(modelPath, DEFAULT_CONTEXT_LENGTH) { contextId ->
-                Log.d(TAG, "Model loaded successfully with context ID: $contextId")
-                LogManager.i(TAG, "Model loaded successfully with context ID: $contextId")
-                isLoaded = true
-                loadSuccess = true
-                latch.countDown()
-            }
+            // Initialize engine (this can take time, already on IO thread)
+            val newEngine = Engine(engineConfig)
+            newEngine.initialize()
             
-            // Wait for model to load (with timeout)
-            val loaded = latch.await(60, TimeUnit.SECONDS)
-            if (!loaded) {
-                Log.e(TAG, "Model loading timed out")
-                LogManager.e(TAG, "Model loading timed out after 60 seconds")
-                isLoaded = false
-                return false
-            }
+            // Only set engine and isLoaded if initialization succeeds
+            engine = newEngine
+            isLoaded = true
             
-            if (loadSuccess) {
-                LogManager.i(TAG, "Model loading completed successfully")
-            } else {
-                LogManager.e(TAG, "Model loading failed")
-            }
-            
-            loadSuccess
+            LogManager.i(TAG, "LiteRT engine initialized successfully")
+            true
         } catch (e: Exception) {
             Log.e(TAG, "Failed to load model", e)
-            LogManager.e(TAG, "Failed to load model", e)
+            LogManager.e(TAG, "Failed to load model: ${e.message}", e)
+            engine = null
             isLoaded = false
             false
         }
@@ -170,10 +116,6 @@ class LlamaModel(private val contentResolver: ContentResolver) {
      * @param prompt The input prompt text
      * @param config Generation configuration with all parameters (optional)
      * @return Generated text
-     * 
-     * Note: The underlying kotlinllamacpp LlamaHelper currently has limited parameter support
-     * through its predict() method. This implementation prepares the full parameter set for
-     * when the library extends its API. Currently, only prompt and streaming are directly supported.
      */
     fun generate(prompt: String, config: GenerationConfig = GenerationConfig()): String {
         if (!isModelLoaded()) {
@@ -191,54 +133,28 @@ class LlamaModel(private val contentResolver: ContentResolver) {
         }
         
         return try {
-            val generatedText = StringBuilder()
-            val latch = CountDownLatch(1)
-            var collectionJob: Job? = null
-            
-            try {
-                // Start collecting events
-                collectionJob = scope.launch {
-                    sharedFlow.collect { event ->
-                        when (event) {
-                            is LlamaHelper.LLMEvent.Ongoing -> {
-                                generatedText.append(event.word)
-                            }
-                            is LlamaHelper.LLMEvent.Done -> {
-                                latch.countDown()
-                            }
-                            is LlamaHelper.LLMEvent.Error -> {
-                                Log.e(TAG, "Generation error: ${event.message}")
-                                LogManager.e(TAG, "Generation error: ${event.message}")
-                                latch.countDown()
-                            }
-                            else -> {}
-                        }
-                    }
-                }
-                
-                // Start generation
-                // TODO: When kotlinllamacpp's LlamaHelper supports additional parameters,
-                // pass the full config through the predict method's params parameter
-                llamaHelper.predict(prompt, partialCompletion = true)
-                
-                // Wait for completion (with timeout)
-                val completed = latch.await(120, TimeUnit.SECONDS)
-                
-                if (!completed) {
-                    Log.e(TAG, "Generation timed out")
-                    LogManager.e(TAG, "Generation timed out after 120 seconds")
-                    return "Error: Generation timed out"
-                }
-                
-                val result = generatedText.toString()
-                LogManager.i(TAG, "Generation completed successfully (length: ${result.length})")
-                result
-            } finally {
-                collectionJob?.cancel()
+            // Create or reuse conversation
+            if (conversation == null) {
+                val samplerConfig = SamplerConfig(
+                    topK = config.topK,
+                    topP = config.topP,
+                    temperature = config.temperature
+                )
+                conversation = engine?.createConversation(
+                    ConversationConfig(samplerConfig = samplerConfig)
+                )
             }
+            
+            // Send message and get response synchronously
+            val userMessage = Message.of(prompt)
+            val response = conversation?.sendMessage(userMessage)
+            
+            val result = response?.toString() ?: ""
+            LogManager.i(TAG, "Generation completed successfully (length: ${result.length})")
+            result
         } catch (e: Exception) {
             Log.e(TAG, "Failed to generate response", e)
-            LogManager.e(TAG, "Failed to generate response", e)
+            LogManager.e(TAG, "Failed to generate response: ${e.message}", e)
             "Error: ${e.message}"
         }
     }
@@ -249,7 +165,7 @@ class LlamaModel(private val contentResolver: ContentResolver) {
      */
     @Deprecated("Use generate(prompt, GenerationConfig) for full parameter control")
     fun generate(prompt: String, maxTokens: Int = 100, temperature: Float = 0.7f): String {
-        return generate(prompt, GenerationConfig(maxTokens = maxTokens, temperature = temperature))
+        return generate(prompt, GenerationConfig(maxTokens = maxTokens, temperature = temperature.toDouble()))
     }
     
     /**
@@ -258,10 +174,6 @@ class LlamaModel(private val contentResolver: ContentResolver) {
      * @param config Generation configuration with all parameters (optional)
      * @param onToken Callback for each generated token
      * @return Job that can be cancelled, or null on error
-     * 
-     * Note: The underlying kotlinllamacpp LlamaHelper currently has limited parameter support
-     * through its predict() method. This implementation prepares the full parameter set for
-     * when the library extends its API. Currently, only prompt and streaming are directly supported.
      */
     fun generateStream(
         prompt: String,
@@ -287,34 +199,46 @@ class LlamaModel(private val contentResolver: ContentResolver) {
             }
         }
         
-        // For streaming, we'll use kotlinllamacpp's token callback
-        val streamJob = scope.launch {
+        return scope.launch {
             try {
-                sharedFlow.collect { event ->
-                    when (event) {
-                        is LlamaHelper.LLMEvent.Ongoing -> {
-                            onToken(event.word)
-                        }
-                        is LlamaHelper.LLMEvent.Done -> {
-                            // Stream complete
-                        }
-                        is LlamaHelper.LLMEvent.Error -> {
-                            Log.e(TAG, "Streaming error: ${event.message}")
-                            LogManager.e(TAG, "Streaming error: ${event.message}")
-                        }
-                        else -> {}
+                // Create or reuse conversation
+                if (conversation == null) {
+                    val samplerConfig = SamplerConfig(
+                        topK = config.topK,
+                        topP = config.topP,
+                        temperature = config.temperature
+                    )
+                    conversation = engine?.createConversation(
+                        ConversationConfig(samplerConfig = samplerConfig)
+                    )
+                }
+                
+                // Use MessageCallback for streaming
+                val callback = object : MessageCallback {
+                    override fun onMessage(message: Message) {
+                        // LiteRT's Message contains the generated token/text
+                        // Using toString() to extract the text content
+                        onToken(message.toString())
+                    }
+                    
+                    override fun onDone() {
+                        LogManager.i(TAG, "Streaming completed")
+                    }
+                    
+                    override fun onError(throwable: Throwable) {
+                        Log.e(TAG, "Streaming error", throwable)
+                        LogManager.e(TAG, "Streaming error: ${throwable.message}", throwable)
                     }
                 }
+                
+                val userMessage = Message.of(prompt)
+                conversation?.sendMessageAsync(userMessage, callback)
             } catch (e: Exception) {
                 Log.e(TAG, "Streaming failed", e)
-                LogManager.e(TAG, "Streaming failed", e)
+                LogManager.e(TAG, "Streaming failed: ${e.message}", e)
+                onToken("Error: ${e.message}")
             }
         }
-        
-        // TODO: When kotlinllamacpp's LlamaHelper supports additional parameters,
-        // pass the full config through the predict method's params parameter
-        llamaHelper.predict(prompt, partialCompletion = true)
-        return streamJob
     }
     
     /**
@@ -328,19 +252,34 @@ class LlamaModel(private val contentResolver: ContentResolver) {
         temperature: Float = 0.7f,
         onToken: (String) -> Unit
     ): Job? {
-        return generateStream(prompt, GenerationConfig(maxTokens = maxTokens, temperature = temperature), onToken)
+        return generateStream(prompt, GenerationConfig(maxTokens = maxTokens, temperature = temperature.toDouble()), onToken)
+    }
+    
+    /**
+     * Cleanup resources by closing conversation and optionally engine.
+     */
+    private fun cleanup(closeEngine: Boolean = false) {
+        try {
+            conversation?.close()
+            conversation = null
+            
+            if (closeEngine) {
+                engine?.close()
+                engine = null
+                scope.cancel()
+            }
+            
+            isLoaded = false
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during cleanup", e)
+            LogManager.e(TAG, "Error during cleanup: ${e.message}", e)
+        }
     }
     
     fun unload() {
-        try {
-            LogManager.i(TAG, "Unloading model")
-            llamaHelper.abort()
-            isLoaded = false
-            modelPath = null
-        } catch (e: Exception) {
-            Log.e(TAG, "Error unloading model", e)
-            LogManager.e(TAG, "Error unloading model", e)
-        }
+        LogManager.i(TAG, "Unloading model")
+        cleanup(closeEngine = false)
+        modelPath = null
     }
     
     /**
@@ -348,15 +287,7 @@ class LlamaModel(private val contentResolver: ContentResolver) {
      * Call this when you're done with the model to free memory immediately.
      */
     fun close() {
-        try {
-            LogManager.i(TAG, "Closing model and releasing resources")
-            llamaHelper.abort()
-            llamaHelper.release()
-            scope.cancel()
-            isLoaded = false
-        } catch (e: Exception) {
-            Log.e(TAG, "Error closing model", e)
-            LogManager.e(TAG, "Error closing model", e)
-        }
+        LogManager.i(TAG, "Closing model and releasing resources")
+        cleanup(closeEngine = true)
     }
 }
