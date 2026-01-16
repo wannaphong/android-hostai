@@ -8,6 +8,7 @@ import java.util.Locale
 /**
  * Centralized logging manager that collects logs in memory for display in the app.
  * Thread-safe implementation using ArrayDeque with synchronized access.
+ * Automatically maintains a maximum of MAX_LOGS entries by removing oldest logs.
  */
 object LogManager {
     private const val MAX_LOGS = 1000
