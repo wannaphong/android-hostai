@@ -16,7 +16,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.File
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 /**
  * Data class to hold all generation/completion parameters.
@@ -215,26 +218,33 @@ class LlamaModel(private val contentResolver: ContentResolver) {
                     )
                 }
                 
-                // Use MessageCallback for streaming
-                val callback = object : MessageCallback {
-                    override fun onMessage(message: Message) {
-                        // LiteRT's Message contains the generated token/text
-                        // Using toString() to extract the text content
-                        onToken(message.toString())
+                // Use suspendCancellableCoroutine to wait for async callback to complete
+                suspendCancellableCoroutine<Unit> { continuation ->
+                    // Use MessageCallback for streaming
+                    val callback = object : MessageCallback {
+                        override fun onMessage(message: Message) {
+                            // LiteRT's Message contains the generated token/text
+                            // Using toString() to extract the text content
+                            onToken(message.toString())
+                        }
+                        
+                        override fun onDone() {
+                            LogManager.i(TAG, "Streaming completed")
+                            // Resume the coroutine when streaming is done
+                            continuation.resume(Unit)
+                        }
+                        
+                        override fun onError(throwable: Throwable) {
+                            Log.e(TAG, "Streaming error", throwable)
+                            LogManager.e(TAG, "Streaming error: ${throwable.message}", throwable)
+                            // Resume with exception on error
+                            continuation.resumeWithException(throwable)
+                        }
                     }
                     
-                    override fun onDone() {
-                        LogManager.i(TAG, "Streaming completed")
-                    }
-                    
-                    override fun onError(throwable: Throwable) {
-                        Log.e(TAG, "Streaming error", throwable)
-                        LogManager.e(TAG, "Streaming error: ${throwable.message}", throwable)
-                    }
+                    val userMessage = Message.of(prompt)
+                    conversation?.sendMessageAsync(userMessage, callback)
                 }
-                
-                val userMessage = Message.of(prompt)
-                conversation?.sendMessageAsync(userMessage, callback)
             } catch (e: Exception) {
                 Log.e(TAG, "Streaming failed", e)
                 LogManager.e(TAG, "Streaming failed: ${e.message}", e)
