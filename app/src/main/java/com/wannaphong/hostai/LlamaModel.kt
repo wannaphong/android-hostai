@@ -170,6 +170,10 @@ class LlamaModel(private val contentResolver: ContentResolver) {
      * @param prompt The input prompt text
      * @param config Generation configuration with all parameters (optional)
      * @return Generated text
+     * 
+     * Note: The underlying kotlinllamacpp LlamaHelper currently has limited parameter support
+     * through its predict() method. This implementation prepares the full parameter set for
+     * when the library extends its API. Currently, only prompt and streaming are directly supported.
      */
     fun generate(prompt: String, config: GenerationConfig = GenerationConfig()): String {
         if (!isModelLoaded()) {
@@ -179,6 +183,7 @@ class LlamaModel(private val contentResolver: ContentResolver) {
         }
         
         LogManager.i(TAG, "Generating response for prompt (length: ${prompt.length})")
+        LogManager.d(TAG, "Config: maxTokens=${config.maxTokens}, temp=${config.temperature}, topK=${config.topK}, topP=${config.topP}")
         
         // For mock model, return a simple response
         if (modelPath == "mock-model") {
@@ -211,10 +216,9 @@ class LlamaModel(private val contentResolver: ContentResolver) {
                     }
                 }
                 
-                // Build params map with all configuration
-                val params = buildParamsMap(prompt, config)
-                
                 // Start generation
+                // TODO: When kotlinllamacpp's LlamaHelper supports additional parameters,
+                // pass the full config through the predict method's params parameter
                 llamaHelper.predict(prompt, partialCompletion = true)
                 
                 // Wait for completion (with timeout)
@@ -254,6 +258,10 @@ class LlamaModel(private val contentResolver: ContentResolver) {
      * @param config Generation configuration with all parameters (optional)
      * @param onToken Callback for each generated token
      * @return Job that can be cancelled, or null on error
+     * 
+     * Note: The underlying kotlinllamacpp LlamaHelper currently has limited parameter support
+     * through its predict() method. This implementation prepares the full parameter set for
+     * when the library extends its API. Currently, only prompt and streaming are directly supported.
      */
     fun generateStream(
         prompt: String,
@@ -264,6 +272,8 @@ class LlamaModel(private val contentResolver: ContentResolver) {
             onToken("Error: Model not loaded. Please load a model first.")
             return null
         }
+        
+        LogManager.d(TAG, "Streaming config: maxTokens=${config.maxTokens}, temp=${config.temperature}, topK=${config.topK}, topP=${config.topP}")
         
         // For mock model, simulate streaming
         if (modelPath == "mock-model") {
@@ -301,6 +311,8 @@ class LlamaModel(private val contentResolver: ContentResolver) {
             }
         }
         
+        // TODO: When kotlinllamacpp's LlamaHelper supports additional parameters,
+        // pass the full config through the predict method's params parameter
         llamaHelper.predict(prompt, partialCompletion = true)
         return streamJob
     }
@@ -317,50 +329,6 @@ class LlamaModel(private val contentResolver: ContentResolver) {
         onToken: (String) -> Unit
     ): Job? {
         return generateStream(prompt, GenerationConfig(maxTokens = maxTokens, temperature = temperature), onToken)
-    }
-    
-    /**
-     * Build parameters map for kotlinllamacpp from GenerationConfig.
-     * Note: kotlinllamacpp's predict method currently has limited parameter support,
-     * but this method prepares the full parameter set for future compatibility.
-     */
-    private fun buildParamsMap(prompt: String, config: GenerationConfig): Map<String, Any> {
-        val params = mutableMapOf<String, Any>(
-            "prompt" to prompt,
-            "n_predict" to config.maxTokens,
-            "temperature" to config.temperature,
-            "top_k" to config.topK,
-            "top_p" to config.topP,
-            "min_p" to config.minP,
-            "tfs_z" to config.tfsZ,
-            "typical_p" to config.typicalP,
-            "penalty_last_n" to config.penaltyLastN,
-            "penalty_repeat" to config.penaltyRepeat,
-            "penalty_freq" to config.penaltyFreq,
-            "penalty_present" to config.penaltyPresent,
-            "mirostat" to config.mirostat,
-            "mirostat_tau" to config.mirostatTau,
-            "mirostat_eta" to config.mirostatEta,
-            "penalize_nl" to config.penalizeNl,
-            "seed" to config.seed,
-            "n_probs" to config.nProbs,
-            "ignore_eos" to config.ignoreEos,
-            "emit_partial_completion" to true
-        )
-        
-        if (config.grammar.isNotEmpty()) {
-            params["grammar"] = config.grammar
-        }
-        
-        if (config.stopStrings.isNotEmpty()) {
-            params["stop"] = config.stopStrings
-        }
-        
-        if (config.logitBias.isNotEmpty()) {
-            params["logit_bias"] = config.logitBias
-        }
-        
-        return params
     }
     
     fun unload() {

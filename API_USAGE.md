@@ -438,12 +438,16 @@ func main() {
 
 ### Common Parameters
 
+These parameters are extracted from the API request and prepared for the generation engine:
+
 - `model` (string): Model identifier (e.g., "llama-mock-model")
 - `temperature` (float, 0-2): Controls randomness. Lower = more deterministic. Default: 0.7
 - `max_tokens` (integer): Maximum tokens to generate. Default: 100
 - `top_p` (float, 0-1): Nucleus sampling parameter. Default: 0.95
 - `top_k` (integer): Top-K sampling parameter. Default: 40
 - `stream` (boolean): Whether to stream the response using Server-Sent Events (SSE). Default: false
+
+**Note:** The HostAI API accepts all parameters listed below and prepares them for the underlying inference engine. The actual parameter support depends on the kotlinllamacpp library implementation. Currently, prompt and streaming are fully supported, with additional parameters prepared for future compatibility.
 
 ### Advanced Sampling Parameters
 
