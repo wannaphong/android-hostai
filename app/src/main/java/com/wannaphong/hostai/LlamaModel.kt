@@ -1,6 +1,8 @@
 package com.wannaphong.hostai
 
 import android.content.ContentResolver
+import android.net.Uri
+import android.provider.OpenableColumns
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -49,8 +51,36 @@ class LlamaModel(private val contentResolver: ContentResolver) {
         
         LogManager.i(TAG, "Loading model from path: $modelPath")
         
-        // Extract model name from file path
-        if (modelPath != "mock-model") {
+        // Handle different path types
+        if (modelPath == "mock-model") {
+            // For mock model, just mark as loaded
+            LogManager.i(TAG, "Using mock model")
+            isLoaded = true
+            return true
+        }
+        
+        // Check if it's a content URI or file path
+        if (modelPath.startsWith("content://")) {
+            // It's a content URI - query for file info
+            try {
+                val uri = Uri.parse(modelPath)
+                contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                    val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                    if (cursor.moveToFirst() && nameIndex >= 0 && sizeIndex >= 0) {
+                        val name = cursor.getString(nameIndex)
+                        if (name != null) {
+                            modelName = name
+                        }
+                        val fileSize = cursor.getLong(sizeIndex)
+                        LogManager.i(TAG, "Model file info: $modelName (${fileSize / 1024 / 1024} MB)")
+                    }
+                }
+            } catch (e: Exception) {
+                LogManager.w(TAG, "Could not query content URI for file info: ${e.message}")
+            }
+        } else {
+            // It's a file path
             val file = File(modelPath)
             if (file.exists()) {
                 modelName = file.name
@@ -58,11 +88,6 @@ class LlamaModel(private val contentResolver: ContentResolver) {
             } else {
                 LogManager.e(TAG, "Model file not found at path: $modelPath")
             }
-        } else {
-            // For mock model, just mark as loaded
-            LogManager.i(TAG, "Using mock model")
-            isLoaded = true
-            return true
         }
         
         return try {

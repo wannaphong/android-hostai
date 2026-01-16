@@ -20,6 +20,7 @@ import android.view.View
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.FileProvider
 import com.wannaphong.hostai.databinding.ActivityMainBinding
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -331,10 +332,18 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             
-            selectedModelPath = internalFile.absolutePath
+            // Create a content URI from the internal file using FileProvider
+            val contentUri = FileProvider.getUriForFile(
+                this,
+                "${applicationContext.packageName}.fileprovider",
+                internalFile
+            )
+            
+            selectedModelPath = contentUri.toString()
             selectedModelName = validFileName
             
             LogManager.i("MainActivity", "Model file copied successfully to: ${internalFile.absolutePath}")
+            LogManager.i("MainActivity", "Content URI created: $contentUri")
             Toast.makeText(this, "Model selected: $validFileName", Toast.LENGTH_SHORT).show()
             updateUI()
             
