@@ -43,6 +43,17 @@ file(GLOB LLAMA_SOURCES
     ${LLAMA_DIR}/src/llama*.cpp
 )
 
+# Extract version information from llama.cpp's CMakeLists.txt
+file(STRINGS "${LLAMA_DIR}/ggml/CMakeLists.txt" GGML_VERSION_MAJOR_LINE REGEX "set\\(GGML_VERSION_MAJOR [0-9]+\\)")
+file(STRINGS "${LLAMA_DIR}/ggml/CMakeLists.txt" GGML_VERSION_MINOR_LINE REGEX "set\\(GGML_VERSION_MINOR [0-9]+\\)")
+file(STRINGS "${LLAMA_DIR}/ggml/CMakeLists.txt" GGML_VERSION_PATCH_LINE REGEX "set\\(GGML_VERSION_PATCH [0-9]+\\)")
+
+string(REGEX MATCH "[0-9]+" GGML_VERSION_MAJOR "${GGML_VERSION_MAJOR_LINE}")
+string(REGEX MATCH "[0-9]+" GGML_VERSION_MINOR "${GGML_VERSION_MINOR_LINE}")
+string(REGEX MATCH "[0-9]+" GGML_VERSION_PATCH "${GGML_VERSION_PATCH_LINE}")
+
+set(GGML_VERSION "${GGML_VERSION_MAJOR}.${GGML_VERSION_MINOR}.${GGML_VERSION_PATCH}")
+
 # Get git commit hash for version info
 execute_process(
     COMMAND git rev-parse --short HEAD
@@ -56,8 +67,6 @@ execute_process(
 if(NOT GGML_BUILD_COMMIT)
     set(GGML_BUILD_COMMIT "unknown")
 endif()
-
-set(GGML_VERSION "0.9.5")
 
 # Create llama static library
 add_library(llama STATIC ${GGML_SOURCES} ${LLAMA_SOURCES})
