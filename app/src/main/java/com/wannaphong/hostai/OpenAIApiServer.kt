@@ -1,5 +1,6 @@
 package com.wannaphong.hostai
 
+import android.content.Context
 import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
@@ -19,8 +20,9 @@ import kotlinx.coroutines.runBlocking
  * - POST /v1/chat/completions - Chat completions (OpenAI format)
  * - POST /v1/completions - Text completions (OpenAI format)
  * - GET /v1/models - List available models
+ * - GET /chat - Chat UI interface
  */
-class OpenAIApiServer(private val port: Int, private val model: LlamaModel) : NanoHTTPD(port) {
+class OpenAIApiServer(private val port: Int, private val model: LlamaModel, private val context: Context) : NanoHTTPD(port) {
     
     private val gson = GsonBuilder()
         .disableHtmlEscaping()
@@ -43,6 +45,8 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel) : Na
                 uri == "/v1/completions" && method == Method.POST -> handleCompletions(session)
                 uri == "/" && method == Method.GET -> handleRoot()
                 uri == "/health" && method == Method.GET -> handleHealth()
+                uri == "/chat" && method == Method.GET -> handleChatUI()
+                uri.startsWith("/assets/") && method == Method.GET -> handleAssets(uri)
                 else -> {
                     LogManager.w(TAG, "Endpoint not found: $uri")
                     newFixedLengthResponse(
@@ -72,11 +76,14 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel) : Na
                     body { font-family: Arial, sans-serif; margin: 40px; }
                     h1 { color: #6200EE; }
                     .endpoint { background: #f5f5f5; padding: 10px; margin: 10px 0; border-radius: 5px; }
+                    .chat-link { background: #6200EE; color: white; padding: 15px 20px; display: inline-block; margin: 20px 0; text-decoration: none; border-radius: 5px; font-weight: bold; }
+                    .chat-link:hover { background: #3700B3; }
                 </style>
             </head>
             <body>
                 <h1>HostAI - OpenAI Compatible API Server</h1>
                 <p>Server is running on port $port</p>
+                <a href="/chat" class="chat-link">Open Chat UI</a>
                 <h2>Available Endpoints:</h2>
                 <div class="endpoint">
                     <strong>GET /v1/models</strong><br>
@@ -93,6 +100,10 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel) : Na
                 <div class="endpoint">
                     <strong>GET /health</strong><br>
                     Health check endpoint
+                </div>
+                <div class="endpoint">
+                    <strong>GET /chat</strong><br>
+                    Web-based chat interface
                 </div>
             </body>
             </html>
@@ -111,6 +122,61 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel) : Na
             "application/json",
             gson.toJson(health)
         )
+    }
+    
+    private fun handleChatUI(): Response {
+        return try {
+            val inputStream = context.assets.open("index.html")
+            val html = inputStream.bufferedReader().use { it.readText() }
+            newFixedLengthResponse(Response.Status.OK, "text/html", html)
+        } catch (e: Exception) {
+            LogManager.e(TAG, "Error loading chat UI", e)
+            newFixedLengthResponse(
+                Response.Status.INTERNAL_ERROR,
+                "text/html",
+                "<html><body><h1>Error loading chat UI</h1><p>${e.message}</p></body></html>"
+            )
+        }
+    }
+    
+    private fun handleAssets(uri: String): Response {
+        return try {
+            // Remove "/assets/" prefix to get the actual file name
+            val fileName = uri.removePrefix("/assets/")
+            
+            // Security: Prevent path traversal attacks
+            if (fileName.contains("..") || fileName.startsWith("/") || fileName.contains("\\")) {
+                LogManager.w(TAG, "Rejected potential path traversal attempt: $uri")
+                return newFixedLengthResponse(
+                    Response.Status.FORBIDDEN,
+                    MIME_PLAINTEXT,
+                    "Invalid asset path"
+                )
+            }
+            
+            // Determine MIME type based on file extension
+            val mimeType = when {
+                fileName.endsWith(".ico") -> "image/x-icon"
+                fileName.endsWith(".json") -> "application/json"
+                fileName.endsWith(".html") -> "text/html"
+                fileName.endsWith(".css") -> "text/css"
+                fileName.endsWith(".js") -> "application/javascript"
+                else -> "application/octet-stream"
+            }
+            
+            val inputStream = context.assets.open(fileName)
+            val bytes = inputStream.readBytes()
+            inputStream.close()
+            
+            newFixedLengthResponse(Response.Status.OK, mimeType, bytes.inputStream(), bytes.size.toLong())
+        } catch (e: Exception) {
+            LogManager.e(TAG, "Error loading asset: $uri", e)
+            newFixedLengthResponse(
+                Response.Status.NOT_FOUND,
+                MIME_PLAINTEXT,
+                "Asset not found"
+            )
+        }
     }
     
     private fun handleModels(): Response {

@@ -102,7 +102,7 @@ class ApiServerService : Service() {
             
             // Start API server
             LogManager.i(TAG, "Starting HTTP server...")
-            apiServer = OpenAIApiServer(port, llamaModel)
+            apiServer = OpenAIApiServer(port, llamaModel, this)
             apiServer?.start()
             isRunning = true
             
