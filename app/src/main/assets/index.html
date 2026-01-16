@@ -1,0 +1,2674 @@
+<!--
+
+  @Component: Chatbot UI
+
+  @Github: https://github.com/AI-QL
+
+  @License: This project uses the following tools, each subject to its respective license restrictions.
+  Please refer to the license of each tool for detailed information:
+
+  - Vue3: https://github.com/vuejs
+  - Vuetify: https://github.com/vuetifyjs/vuetify
+  - Pinia: https://github.com/vuejs/pinia
+  - md-editor-v3: https://github.com/imzbf/md-editor-v3
+  - lottie-web: https://github.com/airbnb/lottie-web
+  - vuedraggable: https://github.com/SortableJS/vue.draggable.next
+  - mammoth: https://github.com/mwilliamson/mammoth.js
+
+   Copyright 2024 AIQL.COM
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+
+-->
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description"
+        content="AIQL provides a suite of tools designed to streamline the development and deployment of AI applications in a cloud-native environment.">
+    <title>Chatbot</title>
+    <style>
+        ::-webkit-scrollbar {
+            display: none;
+        }
+
+        .loading {
+            all: initial;
+            position: fixed;
+            top: calc(50% - 35px);
+            left: calc(50% - 35px);
+            display: flex;
+            width: 70px;
+            height: 70px;
+            border: 4px solid #1867C0;
+            border-top-color: rgba(0, 0, 0, 0.2);
+            border-right-color: rgba(0, 0, 0, 0.2);
+            border-bottom-color: rgba(0, 0, 0, 0.2);
+            border-radius: 100%;
+            overflow: hidden;
+
+            animation: circle infinite 1s linear;
+        }
+
+        @keyframes circle {
+            0% {
+                transform: rotate(0);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+    <div id="loading" class="loading"></div>
+
+    <!-- MDI -->
+    <!-- https://mirrors.sustech.edu.cn/cdnjs/ajax/libs/MaterialDesign-Webfont/7.4.47/css/materialdesignicons.min.css -->
+    <link href="https://cdn.jsdelivr.org/npm/@mdi/font/css/materialdesignicons.min.css" rel="stylesheet" rel="preload">
+
+    <!-- Keep the order, vue should be the first -->
+    <script src="https://cdn.jsdelivr.org/npm/vue@3.5.21/dist/vue.global.prod.min.js"></script>
+
+    <!-- Vuetify -->
+    <script src="https://cdn.jsdelivr.org/npm/vuetify/dist/vuetify.js"></script>
+    <link href="https://cdn.jsdelivr.org/npm/vuetify/dist/vuetify.css" rel="stylesheet">
+
+    <!-- Vue i18n -->
+    <script src="https://cdn.jsdelivr.org/npm/vue-i18n/dist/vue-i18n.global.prod.min.js"></script>
+    <script src="https://cdn.jsdelivr.org/npm/iconify-icon/dist/iconify-icon.min.js"></script>
+
+    <!-- Pinia -->
+    <script src="https://cdn.jsdelivr.org/npm/vue-demi/lib/index.iife.min.js"></script>
+    <script src="https://cdn.jsdelivr.org/npm/pinia/dist/pinia.iife.prod.js"></script>
+    <script src="https://cdn.jsdelivr.org/npm/pinia-plugin-persist/dist/pinia-persist.umd.min.js"></script>
+
+    <!-- MD -->
+    <link href="https://cdn.jsdelivr.org/npm/md-editor-v3/lib/style.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.org/npm/md-editor-v3/lib/umd/index.js"></script>
+
+    <!-- Lottie -->
+    <script src="https://cdn.jsdelivr.org/npm/lottie-web/build/player/lottie.min.js"></script>
+    <!-- Docx mammoth -->
+    <script src="https://cdn.jsdelivr.org/npm/mammoth/mammoth.browser.js"></script>
+
+    <!-- Vue Draggable -->
+    <script src="https://cdn.jsdelivr.org/npm/sortablejs/Sortable.min.js"></script>
+    <script src="https://cdn.jsdelivr.org/npm/vue3-draggable-next/dist/vuedraggable.umd.min.js"></script>
+
+    <script>
+        window.onload = function () {
+            const lottie = document.getElementById('lottie');
+            if (lottie) lottie.style.display = 'block';
+            document.getElementById('loading').style.display = 'none';
+        };
+    </script>
+
+    <style scoped lang="scss">
+        [v-cloak] {
+            display: none;
+        }
+
+        .chat-bot {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        .fill-area {
+            height: 20px
+        }
+
+        .dialog-card {
+            width: 960px;
+            max-width: 100vw;
+            max-height: calc(70vh + 3rem);
+        }
+
+        #lottie {
+            display: none;
+            height: calc(99vh - 50px);
+            max-height: calc(100% - 100px);
+        }
+
+        .left-icon {
+            margin-bottom: 0.8rem;
+        }
+
+        .input-area {
+            background-color: white;
+            display: flex;
+            padding-inline: 21.5px;
+            margin-inline: 21.5px;
+            width: 100%;
+            position: fixed;
+            left: 50%;
+            transform: translate(-50%);
+            bottom: 0;
+
+            .input-panel {
+                flex: 1;
+                border-top: 5px solid white;
+                max-width: 1280px;
+                border-radius: 5px;
+                margin: 0 auto;
+            }
+
+            .input-box textarea {
+                margin-bottom: 1px;
+            }
+
+            .input-box textarea::-webkit-scrollbar {
+                display: none;
+
+            }
+
+            .input-icon {
+                margin: 0 10px 34px 10px;
+                /* top left bot right*/
+            }
+        }
+
+        .chat-images {
+            width: 25px;
+            max-height: 40px;
+            transition: all 0.2s;
+            /* margin-bottom: 20px; */
+
+            &:hover {
+                transition: all 0.2s;
+                opacity: 0.5;
+                filter: grayscale(100%);
+                cursor: not-allowed;
+            }
+        }
+
+        .shadow {
+            box-shadow: 1px 1px 7px #1867C0;
+        }
+
+        .hidden {
+            overflow: hidden;
+        }
+
+        .chat-message {
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .message {
+            margin: 0 auto;
+            display: flex;
+        }
+
+        .conversation-area {
+            margin: 6px 4px 4px 4px;
+            /* top left bot right*/
+        }
+
+        .fade-enter-active,
+        .fade-leave-active {
+            transition: all 0.5s ease;
+        }
+
+        .fade-enter-from,
+        .fade-leave-to {
+            opacity: 0;
+            transform: translateX(35px);
+        }
+
+        .toolbox-button {
+            position: fixed;
+            background-color: #1867C0;
+            bottom: 194px;
+            right: -46px;
+            z-index: 999;
+            padding: 0.5rem 1rem;
+            border-top-left-radius: 0.5rem;
+            border-bottom-left-radius: 0.5rem;
+            box-shadow: 1px 1px 9px #1867C0;
+            transition: all 0.5s;
+            cursor: pointer;
+
+            &:hover {
+                box-shadow: 1px 1px 18px #1867C0;
+                right: 0px;
+                transition: all 0.5s;
+            }
+
+        }
+
+        .history-images {
+            &:hover {
+                cursor: zoom-in;
+            }
+        }
+
+        .md-preview {
+            width: 100vw;
+            max-width: 100%;
+        }
+
+        .md-editor-preview p {
+            word-break: break-word;
+        }
+
+        .toolbox {
+            z-index: 99;
+            position: fixed;
+            bottom: 194px;
+            right: 5px;
+        }
+
+        .rotation {
+            font-size: 1.5rem;
+            animation: rotation 2s linear infinite;
+        }
+
+        .ghost {
+            opacity: 0.5;
+            background: #E3F2FD;
+        }
+
+        .list-draggable {
+            height: calc(100% - 38px);
+            /* background-color: lightblue; */
+        }
+
+        .bgc {
+            background-color: lightblue;
+        }
+
+        @keyframes rotation {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        ::-webkit-scrollbar {
+            display: block;
+            block-size: 5px;
+            inline-size: 5px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background-color: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background-color: lightgrey;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background-color: grey;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="app" v-cloak>
+        <v-app>
+            <v-container v-show="messageStore.conversation.length === 0">
+                <div id="lottie" class="text-center text-h5">
+                    <a href="https://github.com/AI-QL/chat-ui" style="color: #1867C0"
+                        class="font-weight-bold text-decoration-none" target="_blank">
+                        <v-icon class="mb-2">mdi-github</v-icon>
+                        {{$t('$vuetify.dataIterator.title')}}</a>
+                </div>
+            </v-container>
+            <v-container v-show="messageStore.conversation.length > 0" class="chat-bot">
+                <tuui-chat-box :messages="messageStore.conversation" :size="settingStore.avatarSize"
+                    :language="languageStore.getLocale"></tuui-chat-box>
+                <div class="fill-area"></div>
+            </v-container>
+            <div class="input-area">
+                <v-sheet elevation="0" class="input-panel d-flex align-end px-1">
+                    <v-speed-dial transition="expand-transition" offset="10">
+                        <template v-slot:activator="{ props: activatorProps }">
+                            <v-btn v-bind="activatorProps" size="small" icon="mdi-cog" absolute
+                                class="input-icon"></v-btn>
+                        </template>
+                        <v-btn key="4" variant="elevated" @click="settingStore.initDialog" icon="mdi-api"
+                            v-tooltip:end="$t('$vuetify.dataIterator.i.title')">
+                        </v-btn>
+                        <v-badge key="3" color="transparent" location='top left'>
+                            <template v-slot:badge>
+                                <iconify-icon :icon="languageStore.getIcon2()"></iconify-icon>
+                            </template>
+                            <v-menu transition="fade-transition">
+                                <template v-slot:activator="{ props }">
+                                    <v-btn variant="elevated" v-bind="props" icon="mdi-translate"
+                                        v-tooltip:end="$t('$vuetify.dataIterator.l.title')">
+                                    </v-btn>
+                                </template>
+                                <v-list class='mb-2'>
+                                    <v-list-item v-for="n in languageStore.list" :key="n.value"
+                                        @click="languageStore.change(n.value)" density="compact">
+                                        <template v-slot:prepend>
+                                            <iconify-icon class='mr-3'
+                                                :icon="languageStore.getIcon(n.name)"></iconify-icon>
+                                        </template>
+                                        <v-list-item-title v-text="n.title"></v-list-item-title>
+                                    </v-list-item>
+                                </v-list>
+                            </v-menu>
+                        </v-badge>
+                        <v-btn @click="settingStore.agentDialog = true" variant="elevated" icon="mdi-account-supervisor"
+                            v-tooltip:end="$t('$vuetify.dataIterator.a.title')">
+                        </v-btn>
+                        <v-btn v-if="mcpStore.getServers" @click="resourceStore.resourceDialog = true"
+                            variant="elevated" icon="mdi-database" v-tooltip:end="$t('$vuetify.dataIterator.r.title')">
+                        </v-btn>
+                        <v-badge key="1" :content="historyStore.conversation.length" color="info" max="99"
+                            location='top left'>
+                            <v-btn variant="elevated" icon="mdi-list-box" @click="settingStore.configHistory = true"
+                                v-tooltip:end="$t('$vuetify.dataIterator.q.title')">
+                            </v-btn>
+                        </v-badge>
+                    </v-speed-dial>
+                    <v-container>
+                        <v-row>
+                            <v-textarea class="input-box" dirty color="primary" type="text" variant="solo" counter
+                                clearable @keydown="messageStore.handleKeydown" v-model="messageStore.userMessage"
+                                :label="" @focus="settingStore.setInputRow(2,0)" @blur="settingStore.setInputRow(1,150)"
+                                :rows="settingStore.inputRow" auto-grow max-rows="15">
+                                <template v-slot:prepend-inner>
+                                    <v-container>
+                                        <v-row>
+                                            <v-img v-if="messageStore.base64" class="chat-images mt-1"
+                                                :src="messageStore.base64" @click="messageStore.images=[]"></v-img>
+                                            <v-file-input v-else @click.stop accept="image/*" hide-input
+                                                v-model="messageStore.images"
+                                                prepend-icon="mdi-plus-circle-outline"></v-file-input>
+                                        </v-row>
+                                    </v-container>
+                                </template>
+                            </v-textarea>
+                        </v-row>
+                    </v-container>
+                    <div class="input-icon">
+                        <v-btn v-if="messageStore.userMessage" size="small" color="primary" variant="elevated"
+                            @click="messageStore.sendMessage" icon="mdi-arrow-up">
+                        </v-btn>
+                        <v-btn v-else-if="messageStore.generating" size="small" color="primary" variant="elevated"
+                            @click="messageStore.stop" icon="mdi-stop"></v-btn>
+                        <v-speed-dial v-else-if="messageStore.conversation.length > 0" location="bottom center"
+                            transition="expand-transition">
+                            <template v-slot:activator="{ props: activatorProps }">
+                                <v-btn v-bind="activatorProps" size="small" icon="mdi-dots-horizontal"
+                                    color="primary"></v-btn>
+                            </template>
+                            <v-btn key="2" size="small" color="primary" variant="elevated"
+                                @click="messageStore.resendMessage" icon="mdi-autorenew"
+                                v-tooltip:start="$t('$vuetify.dataIterator.g.reg')">
+                            </v-btn>
+                            <v-btn key="1" color="primary" variant="elevated" @click="messageStore.init()"
+                                icon="mdi-pencil-plus" v-tooltip:start="$t('$vuetify.dataIterator.g.new')">
+                            </v-btn>
+                        </v-speed-dial>
+                        <v-btn v-else size="small" :color="mcpStore.getServers ? 'primary': 'grey'" variant="elevated"
+                            @click="mcpStore.getServers ? promptStore.promptDialog = true : false"
+                            icon="mdi-account-edit">
+                        </v-btn>
+                    </div>
+                </v-sheet>
+            </div>
+
+            <!-- snackbar -->
+            <v-snackbar v-model="snackbarStore.isShow" timeout="4000" :color="snackbarStore.type" location="top">
+                <div class="d-flex align-center">
+                    <v-icon class="mr-2">{{ snackbarStore.getIcon() }}</v-icon>
+                    <span>{{$t(snackbarStore.message)}}</span>
+                </div>
+
+                <template v-slot:actions>
+                    <v-btn icon variant="text" @click="snackbarStore.isShow = false">
+                        <v-icon>mdi-close</v-icon>
+                    </v-btn>
+                </template>
+            </v-snackbar>
+
+            <v-dialog v-model="settingStore.configHistory" class="dialog-card">
+                <v-card prepend-icon="mdi-history" :title="$t('$vuetify.dataIterator.q.title')" flat>
+                    <template v-slot:append>
+                        <v-card-actions>
+                            <v-spacer></v-spacer>
+                            <v-btn color="primary" icon="mdi-download" @click="historyStore.downloadHistory"></v-btn>
+                            <v-btn color="error" icon="mdi-delete-off-outline" @click="historyStore.resetState"></v-btn>
+                        </v-card-actions>
+                    </template>
+
+                    <v-data-iterator :items="historyStore.conversation" items-per-page="-1" class="ma-4 mt-0">
+                        <template v-slot:default="{ items }">
+                            <transition-group name="fade">
+                                <v-card v-for="(item, index) in items" variant="plain" :key="item.raw.id">
+                                    <v-divider></v-divider>
+                                    <v-card-item>
+                                        <template v-slot:prepend>
+                                            <v-btn :color="historyStore.getColor(index)" class="mr-3" icon size="small"
+                                                @click="historyStore.select(index)">
+                                                <b>{{item.raw.history.length}}</b>
+                                            </v-btn>
+                                        </template>
+                                        <v-card-subtitle class="mt-1 font-weight-bold">
+                                            {{ item.raw.history[0]?.content[1]?.text || item.raw.history[0]?.content ||
+                                            "NA" }}
+                                        </v-card-subtitle>
+                                        <v-card-subtitle>
+                                            {{ item.raw.history[item.raw.history.length-1]?.content[1]?.text ||
+                                            item.raw.history[item.raw.history.length-1]?.content || "NA" }}
+                                        </v-card-subtitle>
+                                        <template v-slot:append>
+                                            <v-btn color="primary" icon="mdi-download" variant="text"
+                                                @click="historyStore.downloadById(index)"></v-btn>
+                                            <v-btn icon="mdi-delete-outline" variant="text"
+                                                @click="historyStore.deleteById(index)"></v-btn>
+                                        </template>
+                                    </v-card-item>
+                                </v-card>
+                            </transition-group>
+                        </template>
+                    </v-data-iterator>
+                </v-card>
+
+            </v-dialog>
+            <!-- dialog -->
+            <v-dialog v-model="settingStore.configDialog" class="dialog-card">
+                <v-card prepend-icon="mdi-cog-outline" :title="$t('$vuetify.dataIterator.i.title')">
+                    <template v-slot:append>
+                        <v-card-actions>
+                            <v-spacer></v-spacer>
+                            <v-btn color="error" icon="mdi-refresh" @click="chatbotStore.resetState"></v-btn>
+                        </v-card-actions>
+                    </template>
+
+                    <v-card-text class="pb-0">
+                        <!-- ---------------------------------------------- -->
+                        <!-- APIKEY -->
+                        <!-- ---------------------------------------------- -->
+                        <v-text-field density='compact' color="primary" variant="outlined"
+                            :append-inner-icon="settingStore.apiKeyShow ? 'mdi-eye-off' : 'mdi-eye'"
+                            :type="settingStore.apiKeyShow ? 'text' : 'password'" v-model="chatbotStore.apiKey"
+                            class="px-2 mb-4" :label="$t('$vuetify.dataIterator.i.apikey')" prepend-inner-icon="mdi-key"
+                            clearable hide-details
+                            @click:append-inner="settingStore.apiKeyShow = !settingStore.apiKeyShow"></v-text-field>
+
+                        <v-expansion-panels static tile variant="accordion" class="px-2 mb-4">
+                            <v-expansion-panel>
+                                <v-expansion-panel-title v-slot="{ expanded }">
+                                    <v-icon icon="mdi-web" start></v-icon>
+                                    <v-row no-gutters class="hidden">
+                                        <span v-if="expanded">{{$t('$vuetify.dataIterator.i.endpoint')}}</span>
+                                        <span v-else>
+                                            <v-chip label color="primary" class="ma-1">
+                                                {{chatbotStore.url}}{{chatbotStore.path}}
+                                            </v-chip>
+
+                                            <v-chip label color="primary" class="ma-1">
+                                                {{chatbotStore.model || "No model" }}
+                                            </v-chip>
+                                        </span>
+                                </v-expansion-panel-title>
+
+                                <v-expansion-panel-text>
+                                    <!-- ---------------------------------------------- -->
+                                    <!-- URL -->
+                                    <!-- ---------------------------------------------- -->
+                                    <v-combobox density='compact' class="px-2"
+                                        :label="$t('$vuetify.dataIterator.i.url')" :items="defaultChoiceStore.url"
+                                        v-model="chatbotStore.url" variant="outlined">
+                                    </v-combobox>
+
+                                    <!-- ---------------------------------------------- -->
+                                    <!-- Path -->
+                                    <!-- ---------------------------------------------- -->
+                                    <v-combobox density='compact' class="px-2"
+                                        :label="$t('$vuetify.dataIterator.i.path')" :items="defaultChoiceStore.path"
+                                        v-model="chatbotStore.path" variant="outlined">
+                                    </v-combobox>
+
+                                    <!-- ---------------------------------------------- -->
+                                    <!-- Model -->
+                                    <!-- ---------------------------------------------- -->
+                                    <v-combobox density='compact' class="px-2"
+                                        :label="$t('$vuetify.dataIterator.i.model')" :items="defaultChoiceStore.model"
+                                        v-model="chatbotStore.model" variant="outlined">
+                                    </v-combobox>
+                                </v-expansion-panel-text>
+                            </v-expansion-panel>
+
+                            <v-expansion-panel>
+                                <v-expansion-panel-title v-slot="{ expanded }">
+                                    <v-icon icon="mdi-account-key" start></v-icon>
+                                    <v-row no-gutters class="hidden">
+                                        <span v-if="expanded">{{ $t('$vuetify.dataIterator.i.advanced') }}</span>
+                                        <span v-else>
+                                            <v-chip label color="primary" class="ma-1">
+                                                {{ chatbotStore.stream ? "Stream" : "Stream: off" }}
+                                            </v-chip>
+                                            <v-chip label color="primary" class="ma-1">
+                                                {{ chatbotStore.mcp ? "MCP" : "MCP: off" }}
+                                            </v-chip>
+                                            <v-chip label color="primary" class="ma-1">
+                                                {{chatbotStore.max_tokens_type}}
+                                                {{": "}}
+                                                {{ chatbotStore.max_tokens_value ? chatbotStore.max_tokens_value :
+                                                "default" }}
+                                            </v-chip>
+                                            <v-chip label color="primary" class="ma-1">
+                                                {{"temperature: "}}
+                                                {{ chatbotStore.temperature ? chatbotStore.temperature :
+                                                "default" }}
+                                            </v-chip>
+                                            <v-chip label color="primary" class="ma-1">
+                                                {{"top_p: "}}
+                                                {{ chatbotStore.top_p ? chatbotStore.top_p :
+                                                "default" }}
+                                            </v-chip>
+                                            <v-chip label color="primary" class="ma-1">
+                                                {{ chatbotStore.authPrefix }}
+                                            </v-chip>
+                                            <v-chip label color="primary" class="ma-1">
+                                                {{ chatbotStore.contentType }}
+                                            </v-chip>
+                                        </span>
+                                </v-expansion-panel-title>
+
+                                <v-expansion-panel-text>
+                                    <v-row class="px-3 mt-2 mr-2">
+
+                                        <v-combobox class="px-2" density='compact'
+                                            :label="$t('$vuetify.dataIterator.i.reasoning')"
+                                            v-model="chatbotStore.reasoning_effort" clearable
+                                            :items="defaultChoiceStore.reasoning_efforts" variant="outlined">
+                                        </v-combobox>
+                                        <v-spacer></v-spacer>
+                                        <v-checkbox v-model="chatbotStore.stream"
+                                            :label="$t('$vuetify.dataIterator.i.stream')" density='compact'
+                                            color="primary">
+                                        </v-checkbox>
+                                        <v-checkbox v-if="mcpStore.getServers" v-model="chatbotStore.mcp"
+                                            :label="$t('$vuetify.dataIterator.i.mcp')" density='compact'
+                                            color="primary">
+                                        </v-checkbox>
+                                    </v-row>
+                                    <v-row class="px-3 mt-4 mb-0">
+                                        <v-combobox class="px-2" density='compact'
+                                            :label="$t('$vuetify.dataIterator.i.maxTokensPrefix')"
+                                            :items="defaultChoiceStore.max_tokens_type"
+                                            v-model="chatbotStore.max_tokens_type" variant="outlined">
+                                        </v-combobox>
+                                        <v-combobox class="px-2" density='compact' label="MaxTokenValue"
+                                            v-model="chatbotStore.max_tokens_value" type='number' single-line
+                                            variant="outlined">
+                                        </v-combobox>
+                                    </v-row>
+                                    <v-row class="px-3 mt-0 mb-0">
+                                        <v-combobox class="px-2" density='compact'
+                                            :label="$t('$vuetify.dataIterator.i.temperature')"
+                                            :items="defaultChoiceStore.temperature" type='number'
+                                            v-model="chatbotStore.temperature" variant="outlined"
+                                            :rules="[value => !isNaN(value) && parseFloat(value) >= 0 && parseFloat(value) <= 2]">
+                                        </v-combobox>
+                                        <v-combobox class="px-2" density='compact'
+                                            :label="$t('$vuetify.dataIterator.i.topP')" v-model="chatbotStore.top_p"
+                                            type='number' variant="outlined"
+                                            :rules="[value => !isNaN(value) && parseFloat(value) >= 0 && parseFloat(value) <= 1]">
+                                        </v-combobox>
+                                    </v-row>
+                                    <v-combobox class="px-2" density='compact'
+                                        :label="$t('$vuetify.dataIterator.i.contentType')"
+                                        v-model="chatbotStore.contentType" variant="outlined">
+                                    </v-combobox>
+                                    <v-combobox class="px-2" density='compact'
+                                        :label="$t('$vuetify.dataIterator.i.authPrefix')"
+                                        :items="defaultChoiceStore.authPrefix" v-model="chatbotStore.authPrefix"
+                                        variant="outlined">
+                                    </v-combobox>
+                                </v-expansion-panel-text>
+                            </v-expansion-panel>
+                        </v-expansion-panels>
+
+                        <!-- Dialog Btn -->
+                        <v-card-actions>
+                            <v-file-input prepend-icon="" prepend-inner-icon="mdi-upload" class="mr-2"
+                                variant="outlined" v-model="configFile"
+                                :label="$t('$vuetify.dataIterator.i.configFile')" accept="application/json"
+                                single-line></v-file-input>
+
+                            <v-spacer></v-spacer>
+                            <v-btn variant="flat" color="primary" @click="settingStore.configDialog = false">OK</v-btn>
+                        </v-card-actions>
+                    </v-card-text>
+                </v-card>
+            </v-dialog>
+            <v-dialog v-model="promptStore.promptDialog" class="dialog-card">
+                <v-card prepend-icon="mdi-account-cog" :title="$t('$vuetify.dataIterator.p.title')">
+                    <v-data-iterator :items="promptStore.promptList" :search="promptStore.search" items-per-page="-1"
+                        @update:options="promptStore.loadPrompts" :loading="promptStore.loading">
+                        <template v-slot:header>
+                            <v-toolbar class="px-2">
+                                <v-text-field v-model="promptStore.search" density="comfortable" placeholder="Search"
+                                    prepend-inner-icon="mdi-magnify" width="100vw" max-width="400px" variant="solo"
+                                    clearable hide-details></v-text-field>
+                            </v-toolbar>
+                        </template>
+                        <template v-slot:default="{ items }">
+                            <v-container class="pa-2" fluid>
+                                <v-row dense>
+                                    <v-col v-for="item in items" :key="item.raw.title +':'+ item.raw.name" cols="auto"
+                                        class="flex-fill">
+                                        <v-card border flat>
+                                            <v-card-item :subtitle="item.raw.name" class="mb-2" :title="item.raw.title">
+                                                <template v-slot:append>
+                                                    <v-btn icon="mdi-lead-pencil" size="small" text="Read" border flat
+                                                        @click="promptStore.select(item.raw)">
+                                                    </v-btn>
+                                                </template>
+                                            </v-card-item>
+                                            <v-card-text>{{ item.raw.description }}</v-card-text>
+                                        </v-card>
+                                    </v-col>
+                                </v-row>
+                            </v-container>
+                        </template>
+                    </v-data-iterator>
+                </v-card>
+            </v-dialog>
+            <v-dialog v-model="promptStore.promptSheet" class="dialog-card">
+                <v-card prepend-icon="mdi-account-cog-outline"
+                    :title="$t('$vuetify.dataIterator.p.sheet') + ' - ' + promptStore.promptSelect.title"
+                    :subtitle="promptStore.promptSelect.name">
+                    <v-divider></v-divider>
+                    <v-card-text>
+                        <div>{{promptStore.promptSelect.description}}</div>
+                        <div v-if="promptStore.promptSelect.arguments">
+                            <br>
+                            <v-textarea class="mx-2" v-for="argument in promptStore.promptSelect.arguments"
+                                color="primary" type="text" variant="outlined" v-model="argument.content"
+                                :label="argument.name" rows="1" auto-grow>
+                        </div>
+                        </v-textarea>
+                        <v-card-actions>
+                            <v-spacer></v-spacer>
+                            <v-btn class="pt-0" variant="flat" color="primary"
+                                @click="messageStore.applyPrompt(promptStore.fetchSelect())">Get</v-btn>
+                        </v-card-actions>
+                    </v-card-text>
+                </v-card>
+            </v-dialog>
+            <v-dialog v-model="resourceStore.resourceDialog" class="dialog-card" scrollable>
+                <v-card prepend-icon="mdi-database" :title="$t('$vuetify.dataIterator.r.title')">
+                    <v-tabs :items="mcpStore.listServerResources()" v-model="resourceStore.tab" color="primary">
+                        <template v-slot:tab="{ item }">
+                            <v-tab :text="item.name" :value="item.name" class="text-none"></v-tab>
+                        </template>
+                    </v-tabs>
+                    <v-divider></v-divider>
+                    <v-card-text>
+                        <v-tabs-window v-model="resourceStore.tab">
+                            <v-tabs-window-item v-for="item in mcpStore.listServerResources()" :value="item.name">
+                                <v-data-iterator :items="resourceStore.resourceTemplatesList" items-per-page="-1"
+                                    @update:options="resourceStore.loadTemplates(item.templatesList)"
+                                    :loading="resourceStore.loadingTemplates">
+                                    <template v-slot:default="{ items }">
+                                        <v-container>
+                                            <v-row dense>
+                                                <v-col v-for="item in items"
+                                                    :key="item.raw.uriTemplate +':'+ item.raw.name" cols="auto"
+                                                    class="flex-fill">
+                                                    <v-card border flat>
+                                                        <v-card-item :subtitle="item.raw.uriTemplate" class="mb-2"
+                                                            :title="item.raw.name">
+                                                        </v-card-item>
+                                                        <v-card-text>{{ item.raw.description }}</v-card-text>
+                                                    </v-card>
+                                                </v-col>
+                                            </v-row>
+                                        </v-container>
+                                    </template>
+                                </v-data-iterator>
+                                <v-data-iterator :items="resourceStore.resourceList" items-per-page="-1"
+                                    @update:options="resourceStore.loadResources(item.list)"
+                                    :loading="resourceStore.loadingResources">
+                                    <template v-slot:default="{ items }">
+                                        <v-container>
+                                            <v-expansion-panels>
+                                                <v-expansion-panel v-for="item in items"
+                                                    :key="item.raw.uri +':'+ item.raw.name"
+                                                    :text="JSON.stringify(item.raw)"
+                                                    :title="item.raw.name +' - '+ item.raw.uri">
+                                                </v-expansion-panel>
+                                            </v-expansion-panels>
+                                        </v-container>
+                                    </template>
+                                </v-data-iterator>
+                            </v-tabs-window-item>
+                        </v-tabs-window>
+                    </v-card-text>
+                </v-card>
+            </v-dialog>
+            <v-dialog v-model="settingStore.agentDialog" class="dialog-card">
+                <v-card prepend-icon="mdi-history" :title="$t('$vuetify.dataIterator.a.title')"
+                    style="overflow-x: auto">
+                    <template v-slot:append>
+                        <v-card-actions>
+                            <v-spacer></v-spacer>
+                            <v-btn color="error" icon="mdi-delete-off-outline" @click="agentStore.initAgent()"></v-btn>
+                        </v-card-actions>
+                    </template>
+                    <!-- board column -->
+                    <v-container class="pt-0">
+                        <v-row justify="center" class="mx-0 mb-2">
+                            <v-col cols="auto" v-for="column in agentStore.columns" :key="column.key" class="flex-fill">
+                                <v-divider></v-divider>
+                                <div class="d-flex align-center ma-1">
+                                    <h5 class="font-weight-bold">{{ column.key }}</h5>
+                                    <v-spacer></v-spacer>
+                                    <!-- add new card button -->
+                                    <v-btn variant="text" rounded icon="mdi-plus" size="small" color="primary"
+                                        @click="column.isAddVisible = !column.isAddVisible">
+                                    </v-btn>
+                                </div>
+
+                                <!-- add new card form -->
+                                <v-card v-show="column.isAddVisible" class="pa-5 mb-4">
+                                    <v-text-field color="primary" v-model="column.addTitle" label="Title"
+                                        variant="underlined" hideDetails autofocus
+                                        @keyup.enter="agentStore.addCard(column)"
+                                        @keyup.esc="column.isAddVisible = false"></v-text-field>
+                                    <div class="mt-3 d-flex flex-md-row flex-column">
+                                        <v-btn class="flex-fill ma-1" size="small"
+                                            @click="column.isAddVisible = !column.isAddVisible">Cancel</v-btn>
+                                        <v-spacer></v-spacer>
+                                        <v-btn class="flex-fill ma-1" size="small" color="primary"
+                                            @click="agentStore.addCard(column)">Add</v-btn>
+                                    </div>
+                                </v-card>
+
+                                <!-- draggable cards -->
+                                <vuedraggable v-model="column.cards" v-bind="agentStore.getDragOption"
+                                    :class="{'list-draggable': !column.isAddVisible}" @change="column.callback"
+                                    item-key="id">
+                                    <template #item="{ element, index }">
+                                        <v-card @click="agentStore.editCard(element)" class="pa-4 mb-4">
+                                            <div class="d-flex align-start font-weight-bold text-title">
+                                                <span class="flex-fill">{{ element.title }}</span>
+                                                <v-btn size="small" variant="text" icon="mdi-delete-outline" rounded
+                                                    color="primary" class="my-n2 mr-n2"
+                                                    @click.stop="agentStore.deleteCard(column, index)"></v-btn>
+                                            </div>
+                                            <div class="text-content">{{ element.description }}</div>
+                                        </v-card>
+                                    </template>
+                                </vuedraggable>
+                            </v-col>
+                        </v-row>
+                        <v-row v-if="mcpStore.getServers" class="ma-1">
+                            <v-col>
+                                <h5 class="font-weight-bold mb-4">MCP</h5>
+                                <v-divider></v-divider>
+                                <v-data-table-server hide-default-footer hide-default-header hide-no-data disable-sort
+                                    v-if="mcpStore.getServers" :items="mcpStore.serverTools"
+                                    @update:options="mcpStore.loadTools"
+                                    :loading="mcpStore.loading"></v-data-table-server>
+                            </v-col>
+                        </v-row>
+
+                    </v-container>
+                </v-card>
+            </v-dialog>
+
+            <v-dialog v-model="agentStore.editDialog" class="dialog-card">
+                <v-card>
+                    <v-card-title class="pa-4 d-flex align-center">
+                        <span class="flex-fill">Edit Card</span>
+                        <v-btn variant="text" rounded icon="mdi-close" size="small" color="primary"
+                            @click="agentStore.editDialog = false">
+                        </v-btn>
+                    </v-card-title>
+                    <v-divider></v-divider>
+                    <div class="pa-4">
+                        <v-text-field class="py-2 px-1" color="primary" v-model="agentStore.card.title" label="Title"
+                            variant="plain" hideDetails placeholder="Title" autofocus
+                            @keyup.enter="agentStore.saveCard()"></v-text-field>
+                        <v-divider></v-divider>
+                        <v-textarea v-model="agentStore.card.description" class="px-2 py-1" variant="plain"
+                            placeholder="Description" hide-details></v-textarea>
+                        <v-card-subtitle>
+                            {{ agentStore.card?.refText }}
+                        </v-card-subtitle>
+                    </div>
+                    <v-divider></v-divider>
+                    <v-card-actions class="px-4 mt-4">
+                        <v-file-input prepend-icon="" prepend-inner-icon="mdi-upload" class="mr-2" variant="outlined"
+                            v-model="agentStore.card.refFile" label="Reference File" accept=".docx, .md, .txt"
+                            single-line></v-file-input>
+                        <v-spacer></v-spacer>
+                        <v-btn variant="outlined" @click="agentStore.editDialog = false">Cancel</v-btn>
+                        <v-btn class="ml-5" variant="flat" color="primary" @click="agentStore.saveCard()">Save</v-btn>
+                    </v-card-actions>
+                </v-card>
+            </v-dialog>
+
+            <div v-if="settingStore.toolboxShow !== true" class="toolbox-button"
+                @click="settingStore.toolboxShow = true">
+                <v-icon class="rotation text-white">mdi-tools</v-icon>
+            </div>
+            <v-card v-else elevation="10" class="d-flex flex-column toolbox">
+                <!-- ---------------------------------------------- -->
+                <!-- Reset -->
+                <!-- ---------------------------------------------- -->
+                <v-btn @click="resetALL()" variant="text" size="45">
+                    <v-icon size="25" color="error">mdi-store-remove</v-icon>
+                    <v-tooltip activator="parent" location="left" text="Reset All Config"></v-tooltip>
+                </v-btn>
+                <!-- ---------------------------------------------- -->
+                <!-- Close Btn -->
+                <!-- ---------------------------------------------- -->
+                <v-btn @click="settingStore.toolboxShow = false" variant="text" size="45" color="error">
+                    <v-icon size="25">mdi-close</v-icon>
+                    <v-tooltip activator="parent" location="left" text="Close Toolbox"></v-tooltip>
+                </v-btn>
+            </v-card>
+        </v-app>
+    </div>
+
+    <template id="tuui-chat-box-template">
+        <div v-for="group in groupMessages">
+            <div v-if="group.group === 'user'">
+                <div class="px-2 py-5 chat-message">
+                    <div class="message">
+                        <v-avatar :size=size class="mt-3 mr-3 mr-lg-6" color="primary" icon="mdi-account-circle">
+                        </v-avatar>
+                        <tuui-chat-card class="gradient text-pre-wrap" :index="group.index" :messages="messages"
+                            :show-modify="true">
+                            <template v-slot:default="{ showmodify }">
+                                <v-card-text v-if="Array.isArray(group.message.content)" class="md-preview">
+                                    <div v-for="(item, index) in group.message.content" :key="index">
+                                        <tuui-img-dialog v-if="item.type=='image_url'"
+                                            :src="item.image_url.url"></tuui-img-dialog>
+                                        <v-textarea class="conversation-area" variant="plain" density='compact'
+                                            auto-grow :counter="showmodify" :hide-details="!showmodify" rows="1"
+                                            :readonly="!showmodify" v-model="item.text"></v-textarea>
+                                    </div>
+                                </v-card-text>
+                                <v-card-text v-else class="md-preview pt-1">
+                                    <v-textarea class="conversation-area" variant="plain" density='compact' auto-grow
+                                        rows="1" :readonly="!showmodify" :counter="showmodify"
+                                        :hide-details="!showmodify" v-model="group.message.content"></v-textarea>
+                                </v-card-text>
+                            </template>
+                        </tuui-chat-card>
+                    </div>
+                </div>
+            </div>
+            <div v-if="group.group === 'assistant'">
+                <div class="px-2 py-5 chat-message">
+                    <div class="message">
+                        <v-avatar :size=size class="mt-3 mr-3 mr-lg-6" color="teal" icon="mdi-lightning-bolt-circle">
+                        </v-avatar>
+                        <tuui-chat-card :index="group.index" :messages="messages" :show-content="true">
+                            <template v-slot:default="{ showcontent }">
+                                <v-card-text v-if="group.message.reasoning_content" class="md-preview pt-1">
+                                    <v-textarea class="conversation-area text-disabled font-italic" variant="plain"
+                                        density='compact' auto-grow hide-details rows="1" readonly
+                                        v-model="group.message.reasoning_content"></v-textarea>
+                                </v-card-text>
+                                <v-card-text v-if="showcontent" class="md-preview pt-1">
+                                    <v-textarea class="conversation-area" variant="plain" density='compact' auto-grow
+                                        hide-details rows="1" readonly v-model="group.message.content"></v-textarea>
+                                </v-card-text>
+                                <v-card-text v-else class="md-preview px-4 py-3">
+                                    <md-preview :model-value="group.message.content"
+                                        :language="language == 'zhHans' ? 'zh-CN' : 'en-US'" :code-foldable="true"
+                                        auto-fold-threshold="Infinity"></md-preview>
+                                </v-card-text>
+                            </template>
+                        </tuui-chat-card>
+                    </div>
+                </div>
+            </div>
+            <div v-if="group.group === 'tool'">
+                <div class="px-2 py-5 chat-message">
+                    <div class="message">
+                        <v-avatar :size=size class="mt-3 mr-3 mr-lg-6" color="brown" icon="mdi-swap-vertical-circle">
+                        </v-avatar>
+                        <tuui-chat-card :messages="messages" :show-copy="false" :index="group.index"
+                            :range="group.messages.length">
+                            <v-tabs v-model="dialogs[group.tab]" :items="group.messages" show-arrows>
+                                <template v-slot:tab="{ item }">
+                                    <v-tab :text="item.index" :key="item.index" :value="item.index">
+                                        <v-icon v-if="item.role == 'tool'" icon="mdi-arrow-left-bold-circle"
+                                            color="primary"></v-icon>
+                                        <v-icon v-if="item.role == 'assistant'" icon="mdi-arrow-right-bold-circle"
+                                            color="teal"></v-icon>
+                                    </v-tab>
+                                </template>
+                                <template v-slot:item="{ item }">
+                                    <v-tabs-window-item :key="item.index" :value="item.index">
+                                        <v-card class="mt-1" variant="flat" v-if="item.role == 'tool'">
+                                            <v-card-item prepend-icon="mdi-chevron-left">
+                                                <v-card-subtitle>
+                                                    {{item.tool_call_id}}
+                                                </v-card-subtitle>
+                                            </v-card-item>
+                                            <v-card-text v-if="Array.isArray(item.content)"
+                                                v-for="content in item.content">
+                                                {{content.text}}
+                                            </v-card-text>
+                                            <v-card-text v-else>
+                                                {{item.content}}
+                                            </v-card-text>
+                                        </v-card>
+                                        <v-card class="mt-1" variant="flat" v-if="item.role == 'assistant'">
+                                            <v-card-text v-if="item.reasoning_content" class="font-weight-bold">
+                                                {{ item.reasoning_content }}
+                                            </v-card-text>
+                                            <v-card-text v-if="item.content" class="font-weight-bold">
+                                                {{ item.content }}
+                                            </v-card-text>
+                                            <div v-for="content in item.tool_calls">
+                                                <v-card-item prepend-icon="mdi-chevron-right">
+                                                    <v-card-subtitle>
+                                                        {{content.id}}
+                                                    </v-card-subtitle>
+                                                </v-card-item>
+                                                <v-card-text>
+                                                    {{content.function.name}}({{content.function.arguments }})
+                                                </v-card-text>
+                                            </div>
+                                        </v-card>
+                                    </v-tabs-window-item>
+                                </template>
+                            </v-tabs>
+                        </tuui-chat-card>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <template id="tuui-img-dialog-template">
+        <v-dialog>
+            <template v-slot:activator="{ props: activatorProps }">
+                <div>
+                    <v-img class="history-images mb-3" contain position="left" min-width="80px" min-height="80px"
+                        width="100%" height="100%" max-width="30vw" max-height="30vh" v-bind="activatorProps"
+                        :src="src"></v-img>
+                </div>
+            </template>
+            <template v-slot:default="{ isActive }">
+                <v-img @click="isActive.value = false" contain width="80vw" height="80vh" max-width="100%"
+                    max-height="100%" :src="src"></v-img>
+            </template>
+        </v-dialog>
+    </template>
+
+    <template id="tuui-chat-card-template">
+        <v-hover open-delay="100">
+            <template v-slot:default="{ isHovering, props }">
+                <v-card v-bind="props" :elevation="isHovering ? 4 : 2" width="100vw" max-width="100%">
+                    <slot :showcontent="showcontent" :showmodify="showmodify"></slot>
+                    <v-expand-transition>
+                        <div v-if="isHovering">
+                            <v-divider></v-divider>
+                            <v-card-actions>
+                                <v-btn v-if="showCopy" color="primary" icon="mdi-content-copy" size="x-small"
+                                    variant="plain" @click="copyToClipboard(messages[index])"></v-btn>
+                                <v-btn v-if="showModify" color="primary"
+                                    :icon=" showmodify ? 'mdi-check-bold' : 'mdi-lead-pencil'" size="x-small"
+                                    variant="plain" @click="showmodify = !showmodify" v-bind="showmodify"></v-btn>
+                                <v-btn v-if="showContent" color="primary"
+                                    :icon=" showcontent ? 'mdi-eye-remove' : 'mdi-eye'" size="x-small" variant="plain"
+                                    @click="showcontent = !showcontent" v-bind="showcontent"></v-btn>
+                                <v-spacer></v-spacer>
+                                <v-btn v-if="showReduce && index > 0" color="error" icon="mdi-format-align-top"
+                                    size="x-small" variant="plain" @click="messages.splice(0, index)"></v-btn>
+                                <v-btn v-if="showDelete" color="error" icon="mdi-delete-off-outline" size="x-small"
+                                    variant="plain" @click="messages.splice(index, range)"></v-btn>
+                            </v-card-actions>
+                        </div>
+                    </v-expand-transition>
+                </v-card>
+            </template>
+        </v-hover>
+    </template>
+
+    <script lang="ts" setup>
+        const { createApp, ref, reactive, computed, onMounted, watch, nextTick, axios, defineProps, defineComponent } = Vue
+        const { createVuetify } = Vuetify
+        const { createPinia, defineStore, storeToRefs } = Pinia
+        const { createI18n, useI18n } = VueI18n
+        const { en, it, ja, sv, zhHans } = 'vuetify/locale'
+
+        const useMcpStore = defineStore("mcpStore", {
+            state: () => ({
+                serverTools: [],
+                loading: true,
+            }),
+
+            getters: {
+                getServers: () => {
+                    console.log('MCP:', window.mcpServers)
+                    return window.mcpServers
+                },
+            },
+
+            actions: {
+                listServerResources: function () {
+                    const mcpServers = this.getServers
+                    const mcpKeys = Object.keys(mcpServers)
+                    const mcpResources = []
+                    for (const key of mcpKeys) {
+                        const resources = mcpServers[key]?.resources
+                        if (resources) {
+                            mcpResources.push({
+                                name: key,
+                                list: resources.list,
+                                templatesList: resources['templates/list']
+                            })
+                        }
+                    }
+                    return mcpResources
+                },
+                loadTools: function () {
+                    this.loading = true
+                    try {
+                        this.listTools().then((tools) => {
+                            this.serverTools = tools.map(tool => {
+                                return {
+                                    name: tool.function.name,
+                                    description: tool.function.description
+                                }
+                            }
+                            )
+                            return
+                        })
+                    } catch (error) {
+                        console.error('Failed to load tools:', error);
+                    } finally {
+                        this.loading = false;
+                    }
+
+                },
+                listTools: async function () {
+                    const mcpServers = this.getServers
+                    if (!mcpServers) {
+                        return null
+                    }
+                    const mcpKeys = Object.keys(mcpServers)
+                    const mcpTools = []
+                    for (const key of mcpKeys) {
+                        const toolsListFunction = mcpServers[key]?.tools?.list;
+                        if (typeof toolsListFunction === 'function') {
+                            const tools = await toolsListFunction();
+                            // console.log(await mcpServers[key]?.prompts?.list())
+                            // console.log(await mcpServers[key]?.resources['templates/list']())
+                            // console.log(await mcpServers[key]?.resources?.list())
+                            if (tools && Array.isArray(tools.tools)) {
+                                for (const tool of tools.tools) {
+                                    mcpTools.push({
+                                        type: 'function',
+                                        function: {
+                                            name: tool.name,
+                                            description: tool.description,
+                                            parameters: tool.inputSchema,
+                                            // strict: true
+                                        }
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    return mcpTools
+                },
+                getTool: async function (tool_name) {
+                    const mcpServers = this.getServers;
+                    const mcpKeys = Object.keys(mcpServers);
+                    const result = await Promise.any(mcpKeys.map(async (key) => {
+                        const toolsListFunction = mcpServers[key]?.tools?.list;
+                        if (typeof toolsListFunction === 'function') {
+                            const tools = await toolsListFunction();
+                            if (tools && Array.isArray(tools.tools)) {
+                                const foundTool = tools.tools.find(tool => tool.name === tool_name);
+                                if (foundTool) {
+                                    return {
+                                        server: key,
+                                        tool: foundTool
+                                    };
+                                }
+                            }
+                        }
+                        throw new Error(`Tool ${tool_name} not found on server ${key}`);
+                    }));
+
+                    return result;
+                },
+                callTool: async function (tool_name, tool_args) {
+                    const tool = await this.getTool(tool_name)
+                    if (!tool) {
+                        return this.packReturn(`Tool name '${tool_name}' not found`)
+                    }
+
+                    let tool_arguments
+
+                    try {
+                        tool_arguments = JSON.parse(tool_args)
+                    } catch (e) {
+                        return this.packReturn(`Arguments JSON parse error: '${e}'`)
+                    }
+
+                    const params = {
+                        name: tool_name,
+                        arguments: tool_arguments
+                    }
+
+                    const result = await this.getServers[tool.server].tools.call(params)
+                    return result
+                },
+                convertItem: function (item) {
+                    if (item.type === "text") {
+                        return item;
+                    } else if (item.type === "image") {
+                        const imageUrl = `data:${item.mimeType};base64,${item.data}`;
+                        return {
+                            type: 'image_url',
+                            image_url: { url: imageUrl }
+                        };
+                    }
+                },
+                packReturn: (string) => {
+                    return {
+                        content: [{
+                            type: 'text',
+                            text: string
+                        }]
+                    }
+                }
+            },
+        });
+
+        const useAgentStore = defineStore("agentStore", {
+            state: () => ({
+                card: null,
+                columns: [],
+                editDialog: false,
+            }),
+
+            persist: {
+                enabled: true,
+                strategies: [{ storage: sessionStorage }],
+            },
+
+            getters: {
+                getDragOption: () => {
+                    return {
+                        animation: 200,
+                        group: "task",
+                        disabled: false,
+                        ghostClass: "ghost",
+                    };
+                },
+
+            },
+
+            actions: {
+                addCard(column) {
+                    const { addTitle, key } = column;
+                    if (!addTitle) return;
+                    let newCard = {
+                        id: "_" + Math.random().toString(36).substring(2, 11),
+                        state: key,
+                        title: addTitle,
+                        description: "",
+                        refFile: null,
+                        refText: "",
+                        order: -1,
+                    };
+                    column.cards.unshift(newCard);
+                    column.addTitle = "";
+                    column.isAddVisible = false;
+                },
+                deleteCard(column, index) {
+                    column.cards.splice(index, 1);
+                },
+                editCard(card) {
+                    this.card = { ...card }
+                    this.editDialog = true;
+                },
+                saveCard() {
+                    const editCard = this.card
+                    if (editCard) {
+                        let foundCard = this.columns
+                            .flatMap(column => column.cards)
+                            .find(card => card.id === this.card.id);
+                        if (foundCard) {
+                            foundCard.title = editCard.title;
+                            foundCard.refText = editCard.refText
+                            foundCard.refFile = editCard.refFile
+                            foundCard.description = editCard.description;
+                            this.editDialog = false;
+                        }
+                    }
+
+                },
+                promptMessage(conversation) {
+
+                    const result = this.columns[0].cards
+                        .filter(
+                            (item) => {
+                                return item.description !== "" || item.refText !== "";
+                            }
+                        )
+                        .map(item => (
+                            item.refText ? `${item.description}\n###\n${item.refText}\n###` : item.description
+                        ))
+                        .join('\n\n');
+
+                    if (result) {
+                        return [{ content: result, role: "system" }, ...conversation]
+                    } else {
+                        return [...conversation]
+                    }
+                    return [...conversation]
+
+                },
+                initAgent() {
+                    this.$reset();
+                    const states = ref(["PROMPT", "BACKUP"]);
+                    const changeState = (e, colIndex) => {
+                        console.log(e)
+                        if (e.added || e.moved) {
+                            const column = this.columns[colIndex];
+                            const state = column.key;
+                            for (let i = 0; i < column.cards.length; i++) {
+                                column.cards[i].order = i;
+                                column.cards[i].state = state;
+                            }
+                        }
+                    };
+
+                    states.value.forEach((state, index) => {
+                        this.columns.push({
+                            key: state,
+                            cards: [],
+                            isAddVisible: false,
+                            callback: (e) => changeState(e, index),
+                        });
+                    });
+
+                    this.parseCards([
+                        {
+                            id: 1,
+                            title: "Prompt 1",
+                            description: "",
+                            state: "PROMPT",
+                        },
+                        // {
+                        //     id: 2,
+                        //     title: "Agent 1",
+                        //     description: "TODO",
+                        //     state: "BACKUP",
+                        // },
+
+                    ])
+
+                },
+
+                parseCards(cards) {
+                    if (!cards) return this.columns.map((column) => (column.cards = []));
+
+                    this.columns.forEach((column) => {
+                        column.cards = cards
+                            .filter((card) => card.state === column.key)
+                            .sort((a, b) => (a.order < b.order ? -1 : 0));
+                    });
+                },
+
+            },
+
+        });
+
+        const useSettingStore = defineStore("settingStore", {
+            state: () => ({
+                inputRow: 1,
+                avatarSize: 24,
+                configDialog: false,
+                configHistory: false,
+
+                agentDialog: false,
+
+                apiKeyShow: false,
+
+                toolboxShow: false,
+                fontStatus: false,
+            }),
+            actions: {
+                initDialog() {
+                    this.apiKeyShow = false; // hide api key
+                    this.configDialog = true;
+                },
+                setInputRow(int, timeout) {
+                    setTimeout(() => {
+                        this.inputRow = int
+                    }, timeout);
+                }
+
+            },
+        });
+
+        const useResourceStore = defineStore("resourceStore", {
+            state: () => ({
+                resourceDialog: false,
+                tab: null,
+
+                resourceList: [],
+                resourceTemplatesList: [],
+
+                loadingTemplates: false,
+                loadingResources: false,
+            }),
+            actions: {
+                loadTemplates: function (resource_function) {
+                    this.loadingTemplates = true
+                    try {
+                        resource_function().then((result) => {
+                            console.log(result)
+                            this.resourceTemplatesList = result.resourceTemplates
+                            return
+                        })
+                    } catch (error) {
+                        console.error('Failed to load resource templates:', error);
+                    } finally {
+                        this.loadingTemplates = false;
+                    }
+
+                },
+                loadResources: function (resource_function) {
+                    this.loadingResources = true
+                    try {
+                        resource_function().then((result) => {
+                            console.log(result)
+                            this.resourceList = result.resources
+                            return
+                        })
+                    } catch (error) {
+                        console.error('Failed to load resources:', error);
+                    } finally {
+                        this.loadingResources = false;
+                    }
+
+                },
+            },
+        });
+
+        const usePromptStore = defineStore("promptStore", {
+            state: () => ({
+                promptDialog: false,
+                promptSheet: false,
+                promptList: [],
+                promptSelect: {},
+                search: '',
+                loading: false,
+            }),
+            actions: {
+                loadPrompts: function () {
+                    this.loading = true
+                    try {
+                        this.fetchPrompts().then((prompts) => {
+                            console.log(prompts)
+                            this.promptList = prompts
+                            return
+                        })
+                    } catch (error) {
+                        console.error('Failed to load prompts:', error);
+                    } finally {
+                        this.loading = false;
+                    }
+
+                },
+                fetchPrompts: async function () {
+                    const mcpStore = useMcpStore();
+                    const mcpServers = mcpStore.getServers
+                    if (!mcpServers) {
+                        return []
+                    }
+                    const mcpKeys = Object.keys(mcpServers)
+                    const allPrompts = []
+                    for (const key of mcpKeys) {
+                        const obj = await mcpServers[key]?.prompts?.list();
+                        if (obj) {
+                            obj.prompts.forEach(prompt => allPrompts.push({ title: key, ...prompt }));
+                        }
+                    }
+
+                    return allPrompts;
+                },
+                select: function (prompt) {
+                    console.log(prompt.title, prompt.name, prompt.arguments)
+                    this.promptSelect = prompt
+                    this.promptSheet = true
+                    this.promptDialog = false
+                },
+                fetchSelect: async function () {
+                    const mcpStore = useMcpStore();
+                    const mcpServers = mcpStore.getServers
+                    const getFun = mcpServers[this.promptSelect.title]?.prompts?.get
+                    if (!getFun) {
+                        return []
+                    }
+                    const params = { name: this.promptSelect.name }
+                    if (this.promptSelect.arguments) {
+                        for (const argument of this.promptSelect.arguments) {
+                            if (argument.name) {
+                                if (!params['arguments']) {
+                                    params['arguments'] = {};
+                                }
+                                params['arguments'][argument.name] = argument.content
+                            }
+                        }
+                    }
+
+                    console.log(params)
+                    const prompts = await getFun(params)
+
+                    const conversations = prompts.messages.map(item => {
+                        const content = mcpStore.convertItem(item.content)
+                        const conversation = {
+                            role: item.role,
+                            content: item.role == 'user' ? [content] : content.text
+                        }
+                        return conversation
+                    });
+
+                    this.promptSheet = false
+
+                    return conversations
+                },
+            },
+        });
+
+
+
+        const useSnackbarStore = defineStore("snackbarStore", {
+            state: () => ({
+                isShow: false,
+                message: "",
+                type: "",
+            }),
+
+            actions: {
+                showMessage(message, type = "") {
+                    this.isShow = true;
+                    this.message = message;
+                    this.type = type;
+                },
+
+                showErrorMessage(message) {
+                    this.showMessage(message, "error");
+                },
+                showSuccessMessage(message) {
+                    this.showMessage(message, "success");
+                },
+                showInfoMessage(message) {
+                    this.showMessage(message, "info");
+                },
+                showWarningMessage(message) {
+                    this.showMessage(message, "warning");
+                },
+                getIcon() {
+                    const icon = {
+                        info: "mdi-information",
+                        success: "mdi-check-circle",
+                        error: "mdi-alert-circle",
+                        warning: "mdi-alert",
+                    };
+
+                    return icon[this.type];
+                },
+            },
+        });
+
+        const TuuiImgDialog = {
+            template: '#tuui-img-dialog-template',
+            props: { src: { type: String, required: true } }
+        };
+
+
+        const TuuiChatCard = defineComponent({
+            template: '#tuui-chat-card-template',
+            props: {
+                index: { type: Number, required: true },
+                range: { type: Number, required: false, default: 1 },
+                messages: { type: Object, required: true },
+                showContent: { type: Boolean, default: false },
+                showDelete: { type: Boolean, default: true },
+                showReduce: { type: Boolean, default: true },
+                showModify: { type: Boolean, default: false },
+                showCopy: { type: Boolean, default: true },
+            },
+            setup(props) {
+                const showcontent = ref(false);
+                const showmodify = ref(false);
+                const snackbarStore = useSnackbarStore();
+
+                const copyToClipboard = async (msg) => {
+                    let textToCopy = '';
+                    try {
+                        if (typeof msg.content === 'string') {
+                            textToCopy = msg.content;
+                        } else if (Array.isArray(msg.content)) {
+                            for (const item of msg.content) {
+                                if (item.type === 'text' && typeof item.text === 'string') {
+                                    textToCopy = item.text;
+                                }
+                            }
+                        }
+                        await navigator.clipboard.writeText(textToCopy);
+                        snackbarStore.showSuccessMessage('$vuetify.dataIterator.snackbar.copied')
+                    } catch (err) {
+                        snackbarStore.showErrorMessage(err)
+                    }
+                };
+
+                return {
+                    copyToClipboard,
+                    showcontent,
+                    showmodify,
+                };
+            }
+        });
+        const TuuiChatBox = {
+            template: '#tuui-chat-box-template',
+            components: {
+                TuuiImgDialog,
+                TuuiChatCard,
+            },
+            props: {
+                messages: { type: Array, required: true },
+                size: { type: Number },
+                language: { type: String }
+            },
+            setup(props) {
+                const dialogs = reactive({});
+                const groupMessages = computed(() => {
+                    const groups = [];
+                    props.messages.forEach((message, index) => {
+                        if (message.role === 'user') {
+                            groups.push({
+                                index: index,
+                                group: 'user',
+                                message: message
+                            })
+                        } else if ((message.role === 'assistant') && (!message.tool_calls || message.tool_calls.length == 0)) {
+                            groups.push({
+                                index: index,
+                                group: 'assistant',
+                                message: message
+                            })
+                        } else {
+                            const lastGroup = groups.at(-1)
+                            if (lastGroup?.group == 'tool') {
+                                lastGroup.messages.push(message)
+                                dialogs[lastGroup.tab] = lastGroup.length
+                                lastGroup.length += 1
+                            } else {
+                                const id = message.tool_call_id || message.tool_calls[0]?.id
+                                groups.push({
+                                    index: index,
+                                    group: 'tool',
+                                    tab: id,
+                                    messages: [message],
+                                    length: 1
+                                })
+                                dialogs[id] = 0
+                            }
+                        }
+                    })
+                    return groups
+                });
+
+                return {
+                    dialogs,
+                    groupMessages
+                }
+            }
+        };
+
+        const app = createApp({
+            components: {
+                vuedraggable,
+                TuuiChatBox,
+                TuuiChatCard
+            },
+            setup() {
+
+                const snackbarStore = useSnackbarStore();
+                const mcpStore = useMcpStore();
+                const agentStore = useAgentStore();
+                const settingStore = useSettingStore();
+                const promptStore = usePromptStore();
+                const resourceStore = useResourceStore();
+
+                const { locale } = useI18n({ useScope: 'global' });
+
+                const useLanguageStore = defineStore("languageStore", {
+                    state: () => ({
+                        list: [{ title: 'English', value: 'en', name: 'united-states' },
+                        { title: 'Italiano', value: 'it', name: 'italy' },
+                        { title: '日本語', value: 'ja', name: 'japan' },
+                        { title: 'Svenska', value: 'sv', name: 'sweden' },
+                        { title: '简体中文', value: 'zhHans', name: 'china' }
+                        ]
+                    }),
+                    getters: {
+                        getLocale: () => {
+                            return locale.value
+                        },
+                    },
+                    actions: {
+                        change(lang) {
+                            locale.value = lang;
+                        },
+                        getIcon(name) {
+                            return `twemoji:flag-${name}`
+                        },
+                        getIcon2() {
+                            const value = this.getLocale
+                            const item = this.list.find(lang => lang.value === value);
+                            return `twemoji:flag-${item.name}`
+                        }
+                    },
+                });
+
+                const useMessageStore = defineStore("messageStore", {
+                    state: () => ({
+                        userMessage: "",
+                        conversation: [],
+                        images: [],
+                        base64: '',
+                        generating: false
+                    }),
+                    actions: {
+                        init() {
+                            if (this.conversation.length === 0) {
+                                snackbarStore.showWarningMessage('$vuetify.dataIterator.snackbar.addfail')
+                            } else {
+                                this.conversation = [];
+                                snackbarStore.showSuccessMessage('$vuetify.dataIterator.snackbar.addnew')
+                            }
+                        },
+                        stop() {
+                            this.generating = false;
+                            snackbarStore.showInfoMessage('$vuetify.dataIterator.snackbar.stopped')
+                        },
+                        clear() {
+                            this.userMessage = "";
+                            this.images = [];
+                        },
+                        handleKeydown(e) {
+                            if (e.key === "Enter" && e.shiftKey) {
+                                //  A new line by default
+                            } else if (e.key === "Enter") {
+                                // Only Enter is pressed, send message
+                                e.preventDefault();
+                                this.sendMessage();
+                            }
+                        },
+                        resendMessage() {
+                            // const conversation = this.conversation.reduce((newConversation, item) => {
+                            let index = this.conversation.length - 1;
+                            while (index >= 0 && this.conversation[index].role !== "user") {
+                                index--;
+                            }
+
+                            // when role == "user" is found，drop followings
+                            if (index >= 0) {
+                                this.conversation.splice(index + 1);;
+                                this.startInference();
+                            }
+                        },
+                        sendMessage() {
+                            if (this.userMessage) {
+                                // Add the message to the list
+
+                                const imageBase64 = this.base64;
+
+                                this.conversation.push({
+                                    content: imageBase64
+                                        ? [
+                                            { type: "image_url", image_url: { url: imageBase64 } },
+                                            { type: "text", text: this.userMessage }
+                                        ] : this.userMessage,
+                                    role: "user",
+                                });
+
+                                if (this.conversation.length == 1) {
+                                    historyStore.init(this.conversation)
+                                }
+
+                                this.startInference();
+                            }
+                        },
+                        applyPrompt: async function (fetchedPrompt) {
+                            const messages = await fetchedPrompt
+                            console.log(messages)
+                            this.conversation = messages
+
+                        },
+                        startInference: async function () {
+                            this.clear();
+                            await createCompletion(this.conversation);
+                            await this.postToolCall()
+                        },
+                        postToolCall: async function () {
+                            const last = this.conversation.at(-1)
+                            if (!last || !last.tool_calls) {
+                                return
+                            }
+                            if (last.tool_calls.length == 0) {
+                                delete last.tool_calls
+                                return
+                            }
+                            if (Object.keys(last.tool_calls[0]).length === 0) {
+                                delete last.tool_calls
+                                return
+                            } else {
+                                let tool_called = false
+                                console.log(last.tool_calls)
+
+                                const callNextTool = async (toolCalls, index) => {
+                                    if (index >= toolCalls.length) {
+                                        return;
+                                    }
+
+                                    const tool_call = toolCalls[index];
+
+                                    try {
+                                        const result = await mcpStore.callTool(
+                                            tool_call.function.name,
+                                            tool_call.function.arguments
+                                        );
+
+                                        console.log(result)
+
+                                        if (result.content) {
+                                            this.contentConvert(result.content, tool_call.id).forEach(item => {
+                                                this.conversation.push(item);
+                                            });
+                                            tool_called = true;
+                                        }
+
+                                        await callNextTool(toolCalls, index + 1);
+                                    } catch (error) {
+                                        const result = mcpStore.packReturn(`Error calling tool: ${error}`)
+                                        this.conversation.push({
+                                            role: "tool",
+                                            content: result.content,
+                                            tool_call_id: tool_call.id
+                                        });
+                                        tool_called = true;
+                                    }
+                                };
+
+                                await callNextTool(last.tool_calls, 0);
+
+                                if (tool_called) {
+                                    this.startInference()
+                                }
+                            }
+                        },
+                        contentConvert: function (content, toolCallId) {
+                            const msg = content.map(item => mcpStore.convertItem(item));
+                            console.log(msg)
+                            if (msg.find(item => item.type === 'image_url')) {
+                                return [{
+                                    role: "tool",
+                                    content: mcpStore.packReturn('Image provided in next user message').content,
+                                    tool_call_id: toolCallId
+                                }, {
+                                    role: "user",
+                                    content: msg,
+                                },
+                                ]
+                            } else {
+                                return [{
+                                    role: "tool",
+                                    content: msg.map(item => item.text).join('\n'), // If the LLM can support array in tool, use msg directly
+                                    tool_call_id: toolCallId
+                                }]
+                            }
+                        }
+                    }
+                });
+
+                const useHistoryStore = defineStore("historyStore", {
+                    state: () => ({
+                        conversation: [],
+                    }),
+                    persist: {
+                        enabled: true,
+                        strategies: [{ storage: localStorage }],
+                    },
+                    getters: {
+                        getDate: () => {
+                            const date = new Date().toLocaleString('zh', { timeZoneName: 'short', hour12: false })
+                            return date
+                        },
+
+                    },
+                    actions: {
+                        resetState() {
+                            this.$reset();
+                        },
+                        deleteById(index) {
+                            this.conversation.splice(index, 1);
+                        },
+                        init(conversation) {
+                            this.conversation.unshift({
+                                id: this.getDate,
+                                history: conversation
+                            });
+                        },
+                        replace(id) {
+                            this.deleteById(id)
+                            this.init(messageStore.conversation)
+                        },
+                        asyncReplace: async (id) => {
+                            await nextTick();
+                            historyStore.replace(id)
+                        },
+                        select(id) {
+                            settingStore.configHistory = false
+                            messageStore.conversation = this.conversation[id].history
+                            this.asyncReplace(id)
+                        },
+                        getColor(id) {
+                            const targetElement = this.conversation[id]?.history.find(element => element.role === "assistant");
+                            if (targetElement) {
+                                return "primary"
+                            } else {
+                                return "grey"
+                            }
+
+                        },
+                        downloadById(id) {
+                            const name = this.conversation[id].id.replace(/[/: ]/g, '-');
+                            this.download(this.conversation[id].history, `history-${name}.json`);
+                        },
+                        downloadHistory() {
+                            this.download(this.conversation, 'history.json')
+                        },
+                        download(json, filename) {
+                            const blob = new Blob([JSON.stringify(json, null, 2)], { type: 'application/json' });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = filename;
+                            a.click();
+                            URL.revokeObjectURL(url);
+                        }
+                    }
+                });
+
+
+                const useDefaultChoiceStore = defineStore("defaultChoiceStore", {
+                    state: () => ({
+                        url: [
+                            "https://api.openai.com",
+                            "http://127.0.0.1",
+                            "https://api.deepinfra.com",
+                            "https://api.deepseek.com",
+                            "https://api.aiql.com"],
+                        path: [
+                            "/chat/completions",
+                            "/v1/chat/completions",
+                            "/v1/openai/chat/completions",
+                            "/openai/v1/chat/completions"],
+                        model: [
+                            "Qwen/Qwen3-32B",
+                            "Qwen/Qwen3-Coder-480B-A35B-Instruct-Turbo",
+                            "openai/gpt-oss-120b"
+                        ],
+                        authPrefix: ["Bearer", "Base", "Token"],
+                        max_tokens_type: ["max_tokens", "max_completion_tokens", "max_new_tokens"],
+                        reasoning_efforts: ['false', 'none', 'low', 'medium', 'high']
+                    }),
+                    persist: {
+                        enabled: true,
+                        strategies: [{ storage: localStorage }],
+                        // paths: ["apiKey"] 
+                    },
+                    actions: {
+                        resetState() {
+                            this.$reset();
+                        },
+                        updateStoreFromJSON(json) {
+                            this.$reset();
+                            this.$state = json;
+                        }
+                    },
+                });
+
+
+                const useChatbotStore = defineStore("chatbotStore", {
+                    state: () => ({
+                        apiKey: "",
+                        url: "",
+                        path: "/v1/chat/completions",
+                        model: "llama-model",
+                        authPrefix: "Bearer",
+                        contentType: "application/json",
+                        max_tokens_type: "max_tokens",
+                        max_tokens_value: "",
+                        temperature: "",
+                        top_p: "",
+                        method: "POST",
+                        stream: true,
+                        thinking: true,
+                        reasoning_effort: null,
+                        mcp: false
+                    }),
+
+                    persist: {
+                        enabled: true,
+                        strategies: [{ storage: localStorage }],
+                        // paths: ["apiKey"] 
+                    },
+
+                    actions: {
+                        resetState() {
+                            this.$reset();
+                            defaultChoiceStore.resetState()
+                        },
+                        updateStoreFromJSON(json) {
+                            this.$reset();
+                            this.$state = json;
+                        }
+                    },
+
+                });
+
+                const chatbotStore = useChatbotStore();
+                const messageStore = useMessageStore();
+                const historyStore = useHistoryStore();
+                const defaultChoiceStore = useDefaultChoiceStore();
+                const languageStore = useLanguageStore();
+
+                const createCompletion = async (rawconversation) => {
+                    const conversation = rawconversation.reduce((newConversation, item) => {
+                        if (item.role === "assistant") {
+                            const { reasoning_content, ...rest } = item;
+                            newConversation.push(rest);
+                        }
+                        // (item.role === "user" && item.content[0].type === "image_url") {
+                        //     // Image is too large, only latest query could be kept
+                        //     newConversation = [item];
+                        // }
+                        else {
+                            newConversation.push(item);
+                        }
+                        return newConversation;
+                    }, []);
+                    // const conversation = rawconversation
+                    try {
+                        messageStore.generating = true
+                        // Create a completion (axios is not used here because it does not support streaming)
+                        const headers = {
+                            "Content-Type": chatbotStore.contentType,
+                        };
+
+                        if (chatbotStore.apiKey) headers.Authorization = `${chatbotStore.authPrefix} ${chatbotStore.apiKey}`
+
+                        const body = {
+                            messages: agentStore.promptMessage(conversation),
+                            model: chatbotStore.model,
+                            stream: chatbotStore.stream,
+                        }
+
+                        if (chatbotStore.max_tokens_value) {
+                            body[chatbotStore.max_tokens_type] = parseInt(chatbotStore.max_tokens_value)
+                        }
+
+                        if (typeof chatbotStore.reasoning_effort === 'string') {
+                            if (chatbotStore.reasoning_effort === 'false') {
+                                // For Python API backends such as extra_body.chat_template_kwargs
+                                body['chat_template_kwargs'] = { enable_thinking: false }
+                            } else {
+                                // For OpenAI OpenAPI backends such as ChatGPT or DeepInfra
+                                body['reasoning_effort'] = chatbotStore.reasoning_effort
+                            }
+                        }
+
+                        if (chatbotStore.temperature) {
+                            body["temperature"] = parseFloat(chatbotStore.temperature)
+                        }
+
+                        if (chatbotStore.top_p) {
+                            body["top_p"] = parseFloat(chatbotStore.top_p)
+                        }
+
+                        if (chatbotStore.mcp) {
+                            body["tools"] = await mcpStore.listTools()
+                        }
+
+                        const request = {
+                            headers: headers,
+                            method: chatbotStore.method,
+                            body: JSON.stringify(body),
+                        };
+
+                        const completion = await fetch(
+                            chatbotStore.url + (chatbotStore.path ? chatbotStore.path : ''),
+                            request
+                        );
+
+                        console.log(completion)
+
+                        // Handle errors
+                        if (!completion.ok) {
+                            const errorData = await completion.json();
+                            console.log(errorData.error?.message);
+                            if (errorData.error?.message)
+                                snackbarStore.showErrorMessage(`${completion.status}: ${errorData.error.message}`);
+                            else if (errorData.detail[0]?.msg)
+                                snackbarStore.showErrorMessage(`${completion.status}${(" - " + errorData.detail[0]?.loc + ":") || ":"} ${errorData.detail[0]?.msg}`);
+                            else
+                                snackbarStore.showErrorMessage(`${completion.status}: ${completion.statusText}`);
+                            return;
+                        }
+
+                        // Create a reader
+                        const reader = completion.body?.getReader();
+                        if (!reader) {
+                            snackbarStore.showErrorMessage('$vuetify.dataIterator.snackbar.parseStreamFail');
+                        }
+
+                        // Add the bot message
+                        messageStore.conversation.push({
+                            content: "",
+                            reasoning_content: "",
+                            tool_calls: [],
+                            role: "assistant",
+                        });
+
+                        let buffer = ''
+
+                        // Read the stream
+                        await read(reader, messageStore.conversation.at(-1), buffer, chatbotStore.stream);
+                    } catch (error) {
+                        snackbarStore.showErrorMessage(error.message);
+                    } finally {
+                        messageStore.generating = false
+                    }
+                };
+
+                const read = async (
+                    reader,
+                    target,
+                    buffer,
+                    stream
+                ) => {
+                    // TextDecoder is a built-in object that allows you to convert a stream of bytes into a string
+                    const decoder = new TextDecoder();
+                    // Destructure the value returned by reader.read()
+                    const { done, value } = await reader.read();
+
+                    // If the stream is done reading, release the lock on the reader
+                    if (done || !messageStore.generating) {
+                        messageStore.generating = false;
+                        return reader.releaseLock();
+                    }
+                    // Convert the stream of bytes into a string
+                    const chunks = decoder.decode(value);
+
+                    if (stream) {
+                        // Split stream
+                        let parts = chunks.split('\n')
+
+                        if (parts.length === 1) {
+                            buffer += parts[0]
+                            return read(reader, target, buffer, stream);
+                        }
+
+                        if (buffer.length > 0) {
+                            parts[0] = buffer + parts[0];
+                            buffer = ''
+                        }
+
+                        const last = parts[parts.length - 1];
+                        if (last && last.length > 0) {
+                            buffer = parts.pop();
+                        }
+
+                        parts
+                            .map((line) => line.trim())
+                            .filter((line) => line.length > 0)
+                            .forEach((line) => {
+                                const pos = line.indexOf(':');
+                                const name = line.substring(0, pos);
+                                if (name !== 'data') {
+                                    return
+                                }
+                                const content = line.substring(pos + 1).trim()
+                                if (content.length === 0) {
+                                    return
+                                } else if (content === "[DONE]") {
+                                    return
+                                }
+                                parseJson(content, target)
+                            })
+
+                    } else {
+                        parseJson(chunks, target)
+                    }
+
+                    // Repeat the process
+                    return read(reader, target, buffer, stream);
+                };
+
+                const parseJson = (content, target) => {
+                    try {
+                        const parsed = JSON.parse(content)
+                        // const choice = 
+                        parseChoices(parsed, target)
+                        // parseChoice(choice, target)
+                    } catch (e) {
+                        console.log(e, content)
+                        parseChoice(content, target)
+                    }
+                };
+
+                const parseChoices = (parsed, target) => {
+                    if ('choices' in parsed) {
+                        return parsed.choices.map((choice) => {
+                            const content = choice.delta || choice.message
+                            return parseChoice(content, target)
+                        })
+                    } else if ('response' in parsed) {
+                        return parseChoice(parsed.response, target)
+                    } else {
+                        return parseChoice(parsed, target)
+                    }
+                };
+
+                const parseChoice = (choice, target) => {
+                    if (choice) {
+                        if (target.role == 'assistant') {
+                            if (typeof choice === 'string') {
+                                target.content += choice;
+                            } else {
+                                if (typeof choice.content === 'string') {
+                                    target.content += choice.content;
+                                }
+                                if (typeof choice.reasoning_content === 'string') {
+                                    target.reasoning_content += choice.reasoning_content;
+                                }
+                            }
+                            parseTool(choice.tool_calls, target)
+                        }
+                    }
+                };
+
+                const parseTool = (tools, target) => {
+                    if (tools) {
+                        tools.map((tool) => {
+                            const lastTool = target.tool_calls.at(-1)
+                            if (lastTool && (!tool.id || lastTool.id == tool.id)) {
+                                const source = tool.function
+                                for (const key in source) {
+                                    // Determine if source[key] is null, skip if it is null
+                                    if (source[key] === null) {
+                                        continue;
+                                    }
+                                    if (lastTool.function[key]) {
+                                        lastTool.function[key] += source[key];
+                                    } else {
+                                        lastTool.function[key] = source[key];
+                                    }
+                                }
+
+                            } else {
+                                target.tool_calls.push(tool)
+                            }
+                        })
+                    }
+                };
+
+                watch(computed(() => messageStore.conversation.at(-1)?.content),
+                    (newValue, oldValue) => {
+                        if (newValue !== oldValue) {
+                            asyncScrollToBottom();
+                        }
+                    }, { deep: true });
+
+                watch(computed(() => messageStore.images),
+                    (newValue, oldValue) => {
+                        if (newValue.length === 0) {
+                            messageStore.base64 = '';
+                        } else {
+                            const file = messageStore.images; // Assuming you're working with a single image
+                            const reader = new FileReader();
+                            const MAX_WIDTH = 2048;
+                            const MAX_HEIGHT = 2048; // adjust these values as needed
+
+                            reader.onload = (e) => {
+                                const img = new Image();
+                                img.onload = () => {
+                                    let width = img.width;
+                                    let height = img.height;
+                                    let quality = 0.8;
+
+                                    // Check if the image exceeds the maximum dimensions
+                                    if (width > MAX_WIDTH || height > MAX_HEIGHT) {
+                                        // Calculate the scaling factor
+                                        const scaleFactor = Math.min(MAX_WIDTH / width, MAX_HEIGHT / height);
+
+                                        // Resize the image
+                                        width *= scaleFactor;
+                                        height *= scaleFactor;
+                                        quality *= scaleFactor;
+
+                                    }
+
+                                    const canvas = document.createElement('canvas');
+                                    const ctx = canvas.getContext('2d');
+
+                                    // Set canvas dimensions to match the resized image
+                                    canvas.width = width;
+                                    canvas.height = height;
+
+                                    // Draw the image on the canvas
+                                    ctx.drawImage(img, 0, 0, width, height);
+
+                                    // Convert the canvas to a PNG data URL
+                                    const pngDataUrl = canvas.toDataURL('image/jpeg', quality);
+
+                                    // Store the PNG data URL in messageStore.base64
+                                    messageStore.base64 = pngDataUrl;
+                                };
+                                img.src = e.target.result;
+                            };
+                            reader.readAsDataURL(file);
+                        }
+                    }, { deep: true });
+
+                const asyncScrollToBottom = async () => {
+                    // await nextTick();
+                    requestAnimationFrame(() => {
+                        scrollToBottom(document.querySelector(".chat-bot"));
+                    });
+                }
+
+                const scrollToBottom = (
+                    element,
+                    options = { behavior: "auto" }
+                ) => {
+                    window.scrollTo({
+                        ...options,
+                        top: element?.scrollHeight
+                    });
+                };
+
+                const initLottie = () => {
+                    lottie.loadAnimation({
+                        container: document.getElementById('lottie'), // the dom element that will contain the animation
+                        renderer: 'svg',
+                        loop: true,
+                        autoplay: true,
+                        path: 'https://gcore.jsdelivr.net/gh/AI-QL/chat-ui/lottie.json' // the path to the animation json
+                    });
+                };
+
+                onMounted(async () => {
+                    initLottie();
+                    agentStore.initAgent();
+                    resizeAvatar()
+                    window.onresize = () => resizeAvatar()
+                    resizeInputBox()
+                });
+
+                const resizeInputBox = () => {
+                    const inputBox = document.querySelector(".input-box");
+                    const handleResize = (entries) => {
+                        for (const entry of entries) {
+                            if (entry.target === inputBox) {
+                                const chatElement = document.querySelector(".chat-bot");
+                                if (chatElement) {
+                                    chatElement.style.marginBottom = `${Math.max(entry.contentRect.height, 122)}px`
+                                }
+                            }
+                        }
+                    };
+                    const resizeObserver = new ResizeObserver(handleResize);
+                    if (inputBox) {
+                        resizeObserver.observe(inputBox);
+                    }
+                };
+
+                const resizeAvatar = () => {
+                    // console.log(window.innerWidth)
+                    if (window.innerWidth <= 1279) {
+                        settingStore.avatarSize = 26
+                    } else {
+                        settingStore.avatarSize = 36
+                    }
+                };
+
+                const configFile = ref(null)
+
+                watch(configFile, (newValue, oldValue) => {
+                    if (newValue) {
+
+                        const reader = new FileReader();
+                        reader.onload = (event) => {
+                            try {
+                                const json = JSON.parse(event.target.result)
+                                chatbotStore.updateStoreFromJSON(json.chatbotStore)
+                                defaultChoiceStore.updateStoreFromJSON(json.defaultChoiceStore)
+                            } catch {
+                                snackbarStore.showErrorMessage('$vuetify.dataIterator.snackbar.parseConfigFail')
+                            }
+
+                        };
+                        reader.readAsText(newValue);
+                    }
+                });
+
+                watch(computed(() => agentStore.card?.refFile),
+                    (newValue, oldValue) => {
+                        const reader = new FileReader();
+                        if (agentStore.card?.refFile === null) {
+                            agentStore.card.refText = ""
+                            return
+                        }
+                        if (newValue?.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+                            reader.onload = (event) => {
+                                mammoth.extractRawText({ arrayBuffer: event.target.result })
+                                    .then(function (result) {
+                                        var text = result.value; // The raw text
+                                        agentStore.card.refText = text
+                                        // var messages = result.messages; // The warning
+                                    })
+                                    .catch(function (error) {
+                                        console.error(error);
+                                    });
+                            };
+                            reader.readAsArrayBuffer(newValue);
+                        } else if (newValue?.name?.length > 0) {
+                            reader.onload = (event) => {
+                                agentStore.card.refText = event.target.result
+                            };
+                            reader.readAsText(newValue);
+                        }
+
+                    }, { deep: true });
+
+                document.fonts.ready.then(() => {
+                    settingStore.fontStatus = true
+                });
+
+                const resetALL = () => {
+                    historyStore.resetState()
+                    chatbotStore.resetState()
+                    defaultChoiceStore.resetState()
+                };
+
+                return {
+                    configFile,
+
+                    settingStore,
+                    promptStore,
+                    resourceStore,
+                    agentStore,
+                    snackbarStore,
+                    mcpStore,
+
+                    messageStore,
+                    defaultChoiceStore,
+                    chatbotStore,
+                    historyStore,
+
+                    languageStore,
+
+                    resetALL,
+
+                };
+            }
+
+        })
+
+        const messages = {
+            en: {
+                $vuetify: {
+                    ...en,
+                    dataIterator: {
+                        title: 'AI Query Layout',
+                        q: { title: 'Query History' },
+                        p: {
+                            title: 'Prompts Template',
+                            sheet: 'Prompts Sheet',
+                            inuse: 'In Use',
+                            standby: 'Standby'
+                        },
+                        l: { title: 'Language' },
+                        a: { title: 'Agent' },
+                        r: { title: 'Resources' },
+                        g: {
+                            new: 'New Conversation',
+                            reg: 'Regeneration'
+                        },
+                        i: {
+                            title: 'Interface Configuration',
+                            apikey: 'API Key',
+                            reasoning: 'Reasoning Effort',
+                            endpoint: 'Endpoint',
+                            url: 'URL',
+                            path: 'Path',
+                            model: 'Model',
+                            advanced: 'Advanced',
+                            method: 'HTTP Method',
+                            stream: 'Stream',
+                            mcp: 'MCP',
+                            maxTokensPrefix: 'Max Tokens Prefix',
+                            temperature: 'Temperature',
+                            topP: 'Top P',
+                            contentType: 'Content Type',
+                            authPrefix: 'Auth Prefix',
+                            configFile: 'Config File'
+                        },
+                        snackbar: {
+                            addnew: 'Added new session.',
+                            addfail: 'Already in a fresh session.',
+                            stopped: 'Generating stopped.',
+                            parseStreamFail: 'Cannot read the stream.',
+                            parseConfigFail: 'Cannot parse the config file.',
+                            copied: 'Copied to clipboard.'
+                        }
+                    },
+                },
+            },
+            it: {
+                $vuetify: {
+                    ...it,
+                    dataIterator: {
+                        title: 'Layout della Query AI',
+                        q: { title: 'Cronologia delle Query' },
+                        l: { title: 'Lingua' },
+                        r: { title: 'Risorse' },
+                        i: {
+                            title: 'Configurazione dell\'interfaccia',
+                            apikey: 'Chiave API',
+                            endpoint: 'Endpoint',
+                            url: 'URL',
+                            path: 'Path',
+                            model: 'Modello',
+                            advanced: 'Configurazione Avanzata',
+                            method: 'HTTP Metodo',
+                            stream: 'Stream',
+                            maxTokensPrefix: 'Max Tokens Prefix',
+                            temperature: 'Temperature',
+                            topP: 'Top P',
+                            contentType: 'Tipo di Contenuto',
+                            authPrefix: 'Auth Prefix',
+                            configFile: 'File di Configurazione'
+                        },
+                        snackbar: {
+                            addnew: 'Aggiunta nuova sessione.',
+                            addfail: 'Già in una nuova sessione.',
+                            stopped: 'Generazione interrotta.',
+                            parseStreamFail: 'Impossibile leggere il flusso.',
+                            parseConfigFail: 'Impossibile analizzare il file di configurazione.',
+                            copied: 'Copiato negli appunti.'
+                        }
+                    },
+                },
+            },
+            ja: {
+                $vuetify: {
+                    ...ja,
+                    dataIterator: {
+                        title: 'AI お問い合わせ',
+                        q: { title: '歴史' },
+                        l: { title: '言語設定' },
+                        r: { title: '資源' },
+                        i: {
+                            title: 'インターフェイス構成',
+                            apikey: 'API キー',
+                            endpoint: '端点',
+                            contentType: 'コンテンツタイプ',
+                            authPrefix: 'リクエストヘッダー',
+                            configFile: 'プロファイル'
+                        },
+                        snackbar: {
+                            addnew: '新しいセッションが追加されました',
+                            addfail: 'すでに最新のセッションに参加しています',
+                            stopped: 'ビルドを停止します',
+                            parseStreamFail: 'データフローを解決できませんでした',
+                            parseConfigFail: '設定ファイルを解決できません',
+                            copied: 'クリップボードにコピーされました'
+                        }
+                    },
+                },
+            },
+            sv: {
+                $vuetify: {
+                    ...sv,
+                    dataIterator: {
+                        title: 'Layout för AI-frågor',
+                        q: { title: 'Frågehistorik' },
+                        l: { title: 'Språkinställning' },
+                        r: { title: 'Resurser' },
+                        i: {
+                            title: 'Konfiguration av gränssnitt',
+                            apikey: 'API Nyckel',
+                            endpoint: 'Slutpunkt',
+                            url: 'URL',
+                            path: 'Sökväg',
+                            model: 'Modell',
+                            stream: 'Strömma',
+                            configFile: 'Konfigurationsfil'
+                        },
+                        snackbar: {
+                            addnew: 'En ny session har lagts till.',
+                            addfail: 'Redan i en ny session.',
+                            stopped: 'Genereringen har stoppats.',
+                            parseStreamFail: 'Det går inte att läsa strömmen.',
+                            parseConfigFail: 'Det går inte att parsa konfigurationsfilen.',
+                            copied: 'Kopierad till urklipp.'
+                        }
+                    },
+                },
+            },
+            zhHans: {
+                $vuetify: {
+                    ...zhHans,
+                    dataIterator: {
+                        title: 'AI 问询界面',
+                        q: { title: '历史记录' },
+                        l: { title: '语言设置' },
+                        p: {
+                            title: 'MCP提示词模板',
+                            sheet: 'MCP提示词表单'
+                        },
+                        a: { title: '智能体' },
+                        r: { title: '资源' },
+                        g: {
+                            new: '新对话',
+                            reg: '重新生成'
+                        },
+                        i: {
+                            title: '接口配置',
+                            apikey: 'API 密钥',
+                            endpoint: '端口',
+                            reasoning: '推理负荷',
+                            url: '网址',
+                            path: '路径',
+                            model: '模型',
+                            advanced: '高级配置',
+                            method: 'HTTP 请求方法',
+                            stream: '流式输出',
+                            maxTokensPrefix: '最大令牌数前缀',
+                            temperature: '温度（随机性）',
+                            topP: '核采样（候选词范围）',
+                            contentType: '媒体类型',
+                            authPrefix: '鉴权请求头',
+                            configFile: '配置文件'
+                        },
+                        snackbar: {
+                            addnew: '已添加新会话',
+                            addfail: '已处于最新会话',
+                            stopped: '停止生成',
+                            parseStreamFail: '无法解析数据流',
+                            parseConfigFail: '无法解析配置文件',
+                            copied: '已复制到剪切板'
+                        }
+                    },
+                },
+            },
+        }
+
+        const i18n = createI18n({
+            legacy: false, // Vuetify does not support the legacy mode of vue-i18n
+            locale: 'en',
+            fallbackLocale: 'en',
+            messages,
+        })
+
+        const vuetify = createVuetify({
+            locale: {
+                adapter: { i18n, useI18n },
+            },
+        })
+        const pinia = createPinia()
+
+        pinia.use(piniaPersist.default)
+
+        app.use(i18n)
+        app.use(vuetify)
+        app.use(pinia)
+        app.use(MdEditorV3.MdPreview)
+
+        app.mount('#app')
+
+    </script>
+</body>
+
+</html>

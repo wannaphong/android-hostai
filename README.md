@@ -20,6 +20,7 @@ The server implements the following OpenAI-compatible endpoints:
 - `POST /v1/completions` - Text completions
 - `GET /health` - Health check endpoint
 - `GET /` - Web interface with API documentation
+- `GET /chat` - Web-based chat UI (powered by [AI-QL/chat-ui](https://github.com/AI-QL/chat-ui))
 
 ## Building
 
@@ -58,6 +59,21 @@ Note: With the kotlinllamacpp library integration, you no longer need to manuall
 3. Tap "Start Server" to begin the API server
 4. The server will start on port 8080 by default
 5. Use the displayed IP address to access the API from other devices on the same network
+
+### Using the Chat UI
+
+The easiest way to interact with your model is through the built-in web chat interface:
+
+1. After starting the server, open a web browser on any device on the same network
+2. Navigate to `http://<phone-ip>:8080/chat`
+3. The chat interface will automatically connect to your local API
+4. Start chatting with your model!
+
+The chat UI is powered by [AI-QL/chat-ui](https://github.com/AI-QL/chat-ui) and comes pre-configured to work with your local API endpoint. It supports:
+- Real-time streaming responses
+- Markdown rendering
+- Chat history management
+- Multimodal inputs (when using vision models)
 
 ### Getting GGUF Models
 
