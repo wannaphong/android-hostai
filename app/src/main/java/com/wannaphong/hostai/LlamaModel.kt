@@ -14,6 +14,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.io.File
 
 /**
@@ -194,7 +196,7 @@ class LlamaModel(private val contentResolver: ContentResolver) {
                 val words = mockResponse.split(" ")
                 for (word in words) {
                     onToken("$word ")
-                    kotlinx.coroutines.delay(50) // Small delay to simulate streaming
+                    delay(50) // Small delay to simulate streaming
                 }
             }
         }
