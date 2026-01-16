@@ -55,7 +55,7 @@ Note: With the LiteRT library integration, you no longer need to manually build 
 ## Usage
 
 1. Install and launch the app on your Android device
-2. Select a LiteRT model file (.litertlm) or GGUF model file from your device storage (optional, for testing you can start without a model)
+2. Select a LiteRT model file (.litertlm) from your device storage (optional, for testing you can start without a model)
 3. Tap "Start Server" to begin the API server
 4. The server will start on port 8080 by default
 5. Use the displayed IP address to access the API from other devices on the same network
@@ -80,7 +80,6 @@ The chat UI is powered by [AI-QL/chat-ui](https://github.com/AI-QL/chat-ui) and 
 You'll need a LiteRT model file to use this app. You can:
 
 - Download pre-converted LiteRT models from [HuggingFace LiteRT Community](https://huggingface.co/litert-community)
-- Download GGUF models from [HuggingFace](https://huggingface.co/search/full-text?q=GGUF&type=model) (legacy support)
 - Popular LiteRT models include:
   - [Gemma3-1B-IT](https://huggingface.co/litert-community/Gemma3-1B-IT) (557 MB, 4-bit quantized)
   - [Phi-4-mini](https://huggingface.co/litert-community/Phi-4-mini-instruct) (3.7 GB, 8-bit quantized)
