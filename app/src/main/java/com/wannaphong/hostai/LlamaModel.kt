@@ -2,14 +2,12 @@ package com.wannaphong.hostai
 
 import android.content.ContentResolver
 import android.util.Log
-import androidx.core.net.toUri
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import org.nehuatl.llamacpp.LlamaHelper
 import java.io.File
 import java.util.concurrent.CountDownLatch
@@ -110,40 +108,43 @@ class LlamaModel(private val contentResolver: ContentResolver) {
         return try {
             val generatedText = StringBuilder()
             val latch = CountDownLatch(1)
-            val collectionJob: Job
+            var collectionJob: Job? = null
             
-            // Start collecting events
-            collectionJob = scope.launch {
-                sharedFlow.collect { event ->
-                    when (event) {
-                        is LlamaHelper.LLMEvent.Ongoing -> {
-                            generatedText.append(event.word)
+            try {
+                // Start collecting events
+                collectionJob = scope.launch {
+                    sharedFlow.collect { event ->
+                        when (event) {
+                            is LlamaHelper.LLMEvent.Ongoing -> {
+                                generatedText.append(event.word)
+                            }
+                            is LlamaHelper.LLMEvent.Done -> {
+                                latch.countDown()
+                            }
+                            is LlamaHelper.LLMEvent.Error -> {
+                                Log.e(TAG, "Generation error: ${event.message}")
+                                latch.countDown()
+                            }
+                            else -> {}
                         }
-                        is LlamaHelper.LLMEvent.Done -> {
-                            latch.countDown()
-                        }
-                        is LlamaHelper.LLMEvent.Error -> {
-                            Log.e(TAG, "Generation error: ${event.message}")
-                            latch.countDown()
-                        }
-                        else -> {}
                     }
                 }
+                
+                // Start generation
+                llamaHelper.predict(prompt, partialCompletion = true)
+                
+                // Wait for completion (with timeout)
+                val completed = latch.await(120, TimeUnit.SECONDS)
+                
+                if (!completed) {
+                    Log.e(TAG, "Generation timed out")
+                    return "Error: Generation timed out"
+                }
+                
+                generatedText.toString()
+            } finally {
+                collectionJob?.cancel()
             }
-            
-            // Start generation
-            llamaHelper.predict(prompt, partialCompletion = true)
-            
-            // Wait for completion (with timeout)
-            val completed = latch.await(120, TimeUnit.SECONDS)
-            collectionJob.cancel()
-            
-            if (!completed) {
-                Log.e(TAG, "Generation timed out")
-                return "Error: Generation timed out"
-            }
-            
-            generatedText.toString()
         } catch (e: Exception) {
             Log.e(TAG, "Failed to generate response", e)
             "Error: ${e.message}"
@@ -155,14 +156,14 @@ class LlamaModel(private val contentResolver: ContentResolver) {
         maxTokens: Int = 100,
         temperature: Float = 0.7f,
         onToken: (String) -> Unit
-    ) {
+    ): Job? {
         if (!isModelLoaded()) {
             onToken("Error: Model not loaded. Please load a model first.")
-            return
+            return null
         }
         
         // For streaming, we'll use kotlinllamacpp's token callback
-        scope.launch {
+        val streamJob = scope.launch {
             try {
                 sharedFlow.collect { event ->
                     when (event) {
@@ -184,6 +185,7 @@ class LlamaModel(private val contentResolver: ContentResolver) {
         }
         
         llamaHelper.predict(prompt, partialCompletion = true)
+        return streamJob
     }
     
     fun unload() {
