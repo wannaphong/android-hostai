@@ -63,8 +63,8 @@ dependencies {
     // Coroutines for async operations
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     
-    // kotlinllamacpp for LLaMA model inference
-    implementation("io.github.ljcamargo:llamacpp-kotlin:0.2.0")
+    // LiteRT for LLM inference
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.8.0")
     
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")

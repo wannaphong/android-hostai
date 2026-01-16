@@ -1,6 +1,6 @@
-# HostAI - Android LLaMA API Server
+# HostAI - Android LLM API Server
 
-An Android application that uses [kotlinllamacpp](https://github.com/ljcamargo/kotlinllamacpp) to host an OpenAI-compatible API server, allowing you to run LLM models on your phone as a web service.
+An Android application that uses [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) to host an OpenAI-compatible API server, allowing you to run LLM models on your phone as a web service.
 
 ## Features
 
@@ -9,7 +9,7 @@ An Android application that uses [kotlinllamacpp](https://github.com/ljcamargo/k
 - 🔄 Foreground service for reliable server operation
 - 🌐 Local network access via WiFi
 - 🔌 Compatible with OpenAI client libraries
-- ⚡ Optimized for ARM-based Android devices using kotlinllamacpp
+- ⚡ Optimized for ARM-based Android devices using LiteRT with GPU acceleration
 
 ## API Endpoints
 
@@ -30,7 +30,7 @@ The server implements the following OpenAI-compatible endpoints:
 - Android SDK (API level 24+)
 - JDK 8 or higher
 
-Note: With the kotlinllamacpp library integration, you no longer need to manually build llama.cpp or configure NDK/CMake.
+Note: With the LiteRT library integration, you no longer need to manually build llama.cpp or configure NDK/CMake.
 
 ### Build Instructions
 
@@ -55,7 +55,7 @@ Note: With the kotlinllamacpp library integration, you no longer need to manuall
 ## Usage
 
 1. Install and launch the app on your Android device
-2. Select a GGUF model file from your device storage (optional, for testing you can start without a model)
+2. Select a LiteRT model file (.litertlm) or GGUF model file from your device storage (optional, for testing you can start without a model)
 3. Tap "Start Server" to begin the API server
 4. The server will start on port 8080 by default
 5. Use the displayed IP address to access the API from other devices on the same network
@@ -75,14 +75,18 @@ The chat UI is powered by [AI-QL/chat-ui](https://github.com/AI-QL/chat-ui) and 
 - Chat history management
 - Multimodal inputs (when using vision models)
 
-### Getting GGUF Models
+### Getting LiteRT Models
 
-You'll need a GGUF model file to use this app. You can:
+You'll need a LiteRT model file to use this app. You can:
 
-- Download pre-converted GGUF models from [HuggingFace](https://huggingface.co/search/full-text?q=GGUF&type=model)
-- Convert your own models following the [llama.cpp quantization guide](https://github.com/ggerganov/llama.cpp#prepare-and-quantize)
+- Download pre-converted LiteRT models from [HuggingFace LiteRT Community](https://huggingface.co/litert-community)
+- Download GGUF models from [HuggingFace](https://huggingface.co/search/full-text?q=GGUF&type=model) (legacy support)
+- Popular LiteRT models include:
+  - [Gemma3-1B-IT](https://huggingface.co/litert-community/Gemma3-1B-IT) (557 MB, 4-bit quantized)
+  - [Phi-4-mini](https://huggingface.co/litert-community/Phi-4-mini-instruct) (3.7 GB, 8-bit quantized)
+  - [Qwen2.5-1.5B](https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct) (1.5 GB, 8-bit quantized)
 
-Quantized models (Q4, Q5, Q8) work particularly well on mobile devices.
+LiteRT models (.litertlm) are optimized for mobile devices with GPU acceleration support.
 
 ### Example API Call
 
@@ -119,18 +123,19 @@ print(response.choices[0].message.content)
 - **MainActivity** - User interface for controlling the server and selecting models
 - **ApiServerService** - Foreground service that runs the HTTP server
 - **OpenAIApiServer** - NanoHTTPD-based web server with OpenAI-compatible endpoints
-- **LlamaModel** - Model interface using kotlinllamacpp library for native llama.cpp integration
+- **LlamaModel** - Model interface using LiteRT library for native LLM inference
 
 ## Implementation
 
-This app uses the [kotlinllamacpp](https://github.com/ljcamargo/kotlinllamacpp) library, which provides:
+This app uses the [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) library, which provides:
 
-- Native llama.cpp bindings optimized for Android/ARM devices
-- Automatic CPU feature detection (i8mm, dotprod) for hardware-accelerated inference
-- Context management and efficient mobile inference
-- Easy-to-use Kotlin API
+- Native LLM inference optimized for Android/ARM devices
+- GPU acceleration support for faster inference on supported devices
+- CPU fallback for universal device compatibility
+- Efficient model loading and context management
+- Easy-to-use Kotlin API with synchronous and asynchronous inference
 
-The library handles all native code compilation and optimization, so you don't need to manually configure NDK, CMake, or build llama.cpp yourself.
+The library handles all native code compilation and optimization, so you don't need to manually configure NDK, CMake, or build native code yourself.
 
 ## Requirements
 
@@ -144,8 +149,8 @@ Apache License 2.0 - See LICENSE file for details
 
 ## Acknowledgments
 
-- [kotlinllamacpp](https://github.com/ljcamargo/kotlinllamacpp) - Kotlin bindings for llama.cpp
-- [llama.cpp](https://github.com/ggerganov/llama.cpp) - LLaMA inference in C/C++
+- [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) - Language model runtime for edge devices
+- [LiteRT](https://github.com/google-ai-edge/LiteRT) - TensorFlow Lite runtime
 - [NanoHTTPD](https://github.com/NanoHttpd/nanohttpd) - Lightweight HTTP server
 
 ## Contributing

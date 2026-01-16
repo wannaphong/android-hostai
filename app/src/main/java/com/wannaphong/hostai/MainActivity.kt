@@ -331,9 +331,11 @@ class MainActivity : AppCompatActivity() {
             
             // Validate file name and extension
             val validFileName = fileName
-            if (validFileName == null || !validFileName.endsWith(".gguf", ignoreCase = true)) {
+            if (validFileName == null || 
+                (!validFileName.endsWith(".gguf", ignoreCase = true) && 
+                 !validFileName.endsWith(".litertlm", ignoreCase = true))) {
                 LogManager.w("MainActivity", "Invalid file type selected: $fileName")
-                Toast.makeText(this, "Please select a GGUF model file", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Please select a GGUF or LiteRT model file (.gguf or .litertlm)", Toast.LENGTH_SHORT).show()
                 return
             }
             
