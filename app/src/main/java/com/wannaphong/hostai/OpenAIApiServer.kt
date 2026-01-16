@@ -523,7 +523,11 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
         return try {
             // Read the input stream directly with UTF-8 encoding to properly handle
             // multibyte characters like Thai, Chinese, Japanese, etc.
-            val contentLength = session.headers["content-length"]?.toIntOrNull() ?: 0
+            
+            // HTTP headers are case-insensitive per RFC, but NanoHTTPD normalizes to lowercase
+            // Try both common variations to be safe
+            val contentLength = (session.headers["content-length"] 
+                ?: session.headers["Content-Length"])?.toIntOrNull() ?: 0
             
             if (contentLength > 0) {
                 // Security: Prevent memory exhaustion attacks by limiting request body size
@@ -541,9 +545,10 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
                 while (bytesRead < contentLength) {
                     val read = inputStream.read(buffer, bytesRead, contentLength - bytesRead)
                     if (read == -1) {
-                        // Reached EOF before reading all expected bytes
-                        LogManager.w(TAG, "Incomplete request body: expected $contentLength bytes, got $bytesRead")
-                        break
+                        // Reached EOF before reading all expected bytes - this is a malformed request
+                        val errorMsg = "Incomplete request body: expected $contentLength bytes, got $bytesRead"
+                        LogManager.w(TAG, errorMsg)
+                        throw IOException(errorMsg)
                     }
                     bytesRead += read
                 }
