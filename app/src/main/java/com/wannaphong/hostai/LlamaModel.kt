@@ -1,41 +1,47 @@
 package com.wannaphong.hostai
 
+import android.content.ContentResolver
+import android.util.Log
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.launch
+import org.nehuatl.llamacpp.LlamaHelper
 import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /**
- * LLaMA model interface with JNI bindings to native llama.cpp code.
+ * LLaMA model interface using kotlinllamacpp library.
  * 
- * This implementation uses native code (C++ via JNI) to interface with llama.cpp.
- * The native library provides actual model loading and text generation capabilities.
+ * This implementation uses the kotlinllamacpp library which provides
+ * native llama.cpp bindings optimized for Android/ARM devices.
  */
-class LlamaModel {
-    private var nativeContext: Long = 0
+class LlamaModel(private val contentResolver: ContentResolver) {
     private var modelName = "llama-model"
     private var modelPath: String? = null
+    private var isLoaded = false
     
-    companion object {
-        init {
-            // Load the native library
-            System.loadLibrary("hostai")
-        }
+    // Internal scope and flow for kotlinllamacpp
+    private val scope = CoroutineScope(Dispatchers.IO)
+    private val sharedFlow = MutableSharedFlow<LlamaHelper.LLMEvent>(
+        replay = 0,
+        extraBufferCapacity = 64
+    )
+    
+    private val llamaHelper by lazy {
+        LlamaHelper(
+            contentResolver = contentResolver,
+            scope = scope,
+            sharedFlow = sharedFlow
+        )
     }
     
-    // Native method declarations
-    private external fun nativeInit(): Long
-    private external fun nativeLoadModel(contextPtr: Long, modelPath: String): Boolean
-    private external fun nativeGenerate(
-        contextPtr: Long,
-        prompt: String,
-        maxTokens: Int,
-        temperature: Float
-    ): String
-    private external fun nativeIsLoaded(contextPtr: Long): Boolean
-    private external fun nativeUnload(contextPtr: Long)
-    private external fun nativeFree(contextPtr: Long)
-    
-    init {
-        // Initialize native context
-        nativeContext = nativeInit()
+    companion object {
+        private const val TAG = "LlamaModel"
+        private const val DEFAULT_CONTEXT_LENGTH = 2048
     }
     
     fun loadModel(modelPath: String): Boolean {
@@ -47,16 +53,42 @@ class LlamaModel {
             if (file.exists()) {
                 modelName = file.name
             }
+        } else {
+            // For mock model, just mark as loaded
+            isLoaded = true
+            return true
         }
         
-        // Load model via JNI
-        val success = nativeLoadModel(nativeContext, modelPath)
-        
-        return success
+        return try {
+            val latch = CountDownLatch(1)
+            var loadSuccess = false
+            
+            // Load model using kotlinllamacpp
+            llamaHelper.load(modelPath, DEFAULT_CONTEXT_LENGTH) { contextId ->
+                Log.d(TAG, "Model loaded successfully with context ID: $contextId")
+                isLoaded = true
+                loadSuccess = true
+                latch.countDown()
+            }
+            
+            // Wait for model to load (with timeout)
+            val loaded = latch.await(60, TimeUnit.SECONDS)
+            if (!loaded) {
+                Log.e(TAG, "Model loading timed out")
+                isLoaded = false
+                return false
+            }
+            
+            loadSuccess
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to load model", e)
+            isLoaded = false
+            false
+        }
     }
     
     fun isModelLoaded(): Boolean {
-        return nativeIsLoaded(nativeContext)
+        return isLoaded
     }
     
     fun getModelName(): String = modelName
@@ -68,8 +100,55 @@ class LlamaModel {
             return "Error: Model not loaded. Please load a model first."
         }
         
-        // Call native generation method
-        return nativeGenerate(nativeContext, prompt, maxTokens, temperature)
+        // For mock model, return a simple response
+        if (modelPath == "mock-model") {
+            return "This is a mock response from the model. In production, this would be the actual LLM output for prompt: \"$prompt\""
+        }
+        
+        return try {
+            val generatedText = StringBuilder()
+            val latch = CountDownLatch(1)
+            var collectionJob: Job? = null
+            
+            try {
+                // Start collecting events
+                collectionJob = scope.launch {
+                    sharedFlow.collect { event ->
+                        when (event) {
+                            is LlamaHelper.LLMEvent.Ongoing -> {
+                                generatedText.append(event.word)
+                            }
+                            is LlamaHelper.LLMEvent.Done -> {
+                                latch.countDown()
+                            }
+                            is LlamaHelper.LLMEvent.Error -> {
+                                Log.e(TAG, "Generation error: ${event.message}")
+                                latch.countDown()
+                            }
+                            else -> {}
+                        }
+                    }
+                }
+                
+                // Start generation
+                llamaHelper.predict(prompt, partialCompletion = true)
+                
+                // Wait for completion (with timeout)
+                val completed = latch.await(120, TimeUnit.SECONDS)
+                
+                if (!completed) {
+                    Log.e(TAG, "Generation timed out")
+                    return "Error: Generation timed out"
+                }
+                
+                generatedText.toString()
+            } finally {
+                collectionJob?.cancel()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to generate response", e)
+            "Error: ${e.message}"
+        }
     }
     
     fun generateStream(
@@ -77,21 +156,46 @@ class LlamaModel {
         maxTokens: Int = 100,
         temperature: Float = 0.7f,
         onToken: (String) -> Unit
-    ) {
-        // For streaming, we'll simulate it by calling generate and splitting the response
-        // A full implementation would require callback support in JNI
-        val response = generate(prompt, maxTokens, temperature)
-        val words = response.split(" ")
-        
-        for (word in words) {
-            onToken("$word ")
-            Thread.sleep(50) // Simulate generation time
+    ): Job? {
+        if (!isModelLoaded()) {
+            onToken("Error: Model not loaded. Please load a model first.")
+            return null
         }
+        
+        // For streaming, we'll use kotlinllamacpp's token callback
+        val streamJob = scope.launch {
+            try {
+                sharedFlow.collect { event ->
+                    when (event) {
+                        is LlamaHelper.LLMEvent.Ongoing -> {
+                            onToken(event.word)
+                        }
+                        is LlamaHelper.LLMEvent.Done -> {
+                            // Stream complete
+                        }
+                        is LlamaHelper.LLMEvent.Error -> {
+                            Log.e(TAG, "Streaming error: ${event.message}")
+                        }
+                        else -> {}
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Streaming failed", e)
+            }
+        }
+        
+        llamaHelper.predict(prompt, partialCompletion = true)
+        return streamJob
     }
     
     fun unload() {
-        nativeUnload(nativeContext)
-        modelPath = null
+        try {
+            llamaHelper.abort()
+            isLoaded = false
+            modelPath = null
+        } catch (e: Exception) {
+            Log.e(TAG, "Error unloading model", e)
+        }
     }
     
     /**
@@ -99,10 +203,13 @@ class LlamaModel {
      * Call this when you're done with the model to free memory immediately.
      */
     fun close() {
-        if (nativeContext != 0L) {
-            unload()
-            nativeFree(nativeContext)
-            nativeContext = 0
+        try {
+            llamaHelper.abort()
+            llamaHelper.release()
+            scope.cancel()
+            isLoaded = false
+        } catch (e: Exception) {
+            Log.e(TAG, "Error closing model", e)
         }
     }
 }
