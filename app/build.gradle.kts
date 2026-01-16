@@ -5,12 +5,12 @@ plugins {
 
 android {
     namespace = "com.wannaphong.hostai"
-    compileSdk = 36
+    compileSdk = 34
 
     defaultConfig {
         applicationId = "com.wannaphong.hostai"
         minSdk = 24
-        targetSdk = 36
+        targetSdk = 34
         versionCode = 1
         versionName = "1.0"
 
@@ -38,6 +38,13 @@ android {
     
     buildFeatures {
         viewBinding = true
+    }
+}
+
+configurations.all {
+    resolutionStrategy {
+        force("androidx.core:core:1.12.0")
+        force("androidx.core:core-ktx:1.12.0")
     }
 }
 
