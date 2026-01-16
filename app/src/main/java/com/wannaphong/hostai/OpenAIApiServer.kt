@@ -2,6 +2,7 @@ package com.wannaphong.hostai
 
 import android.util.Log
 import com.google.gson.Gson
+import com.google.gson.GsonBuilder
 import com.google.gson.JsonObject
 import fi.iki.elonen.NanoHTTPD
 import java.io.IOException
@@ -15,7 +16,9 @@ import java.io.IOException
  */
 class OpenAIApiServer(private val port: Int, private val model: LlamaModel) : NanoHTTPD(port) {
     
-    private val gson = Gson()
+    private val gson = GsonBuilder()
+        .disableHtmlEscaping()
+        .create()
     
     companion object {
         private const val TAG = "OpenAIApiServer"
