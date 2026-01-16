@@ -90,8 +90,21 @@ class ApiServerService : Service() {
         return try {
             // Start foreground service IMMEDIATELY to prevent Android from killing the service
             // This must be called within 5 seconds on Android O+ or the service will crash
+            // On Android 12+ (API 31+), we also need to handle ForegroundServiceStartNotAllowedException
             val notification = createNotification(port)
-            startForeground(NOTIFICATION_ID, notification)
+            
+            try {
+                startForeground(NOTIFICATION_ID, notification)
+            } catch (e: Exception) {
+                // Handle ForegroundServiceStartNotAllowedException on Android 12+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && 
+                    e::class.java.simpleName == "ForegroundServiceStartNotAllowedException") {
+                    LogManager.e(TAG, "Cannot start foreground service: app may be in background or notification permission denied", e)
+                    throw e
+                } else {
+                    throw e
+                }
+            }
             
             // Now we can safely do heavy operations like model loading
             // Initialize model with ContentResolver
@@ -119,7 +132,11 @@ class ApiServerService : Service() {
             Log.e(TAG, "Failed to start server", e)
             LogManager.e(TAG, "Failed to start server", e)
             // Make sure we stop foreground if we failed after starting it
-            stopForeground(true)
+            try {
+                stopForeground(true)
+            } catch (ex: Exception) {
+                // Ignore errors when stopping foreground
+            }
             false
         }
     }
