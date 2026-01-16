@@ -215,6 +215,9 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
         // Build prompt from messages
         val prompt = buildPromptFromMessages(messages)
         
+        // Log a preview of the prompt to verify character encoding
+        val promptPreview = if (prompt.length > 100) prompt.take(100) + "..." else prompt
+        LogManager.d(TAG, "Prompt preview: $promptPreview")
         LogManager.d(TAG, "Chat completion - stream: $stream, maxTokens: ${config.maxTokens}, temp: ${config.temperature}")
         
         if (stream) {
@@ -515,13 +518,35 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
     }
     
     private fun getRequestBody(session: IHTTPSession): String {
-        val map = mutableMapOf<String, String>()
-        try {
-            session.parseBody(map)
+        return try {
+            // Read the input stream directly with UTF-8 encoding to properly handle
+            // multibyte characters like Thai, Chinese, Japanese, etc.
+            val contentLength = session.headers["content-length"]?.toIntOrNull() ?: 0
+            
+            if (contentLength > 0) {
+                // Read the request body directly from input stream with UTF-8
+                val buffer = ByteArray(contentLength)
+                var bytesRead = 0
+                val inputStream = session.inputStream
+                
+                while (bytesRead < contentLength) {
+                    val read = inputStream.read(buffer, bytesRead, contentLength - bytesRead)
+                    if (read == -1) break
+                    bytesRead += read
+                }
+                
+                // Decode with UTF-8 to properly handle multibyte characters
+                String(buffer, 0, bytesRead, Charsets.UTF_8)
+            } else {
+                // Fallback to parseBody for empty or unknown content-length
+                val map = mutableMapOf<String, String>()
+                session.parseBody(map)
+                map["postData"] ?: ""
+            }
         } catch (e: IOException) {
             Log.e(TAG, "Failed to parse request body", e)
             LogManager.e(TAG, "Failed to parse request body", e)
+            ""
         }
-        return map["postData"] ?: ""
     }
 }
