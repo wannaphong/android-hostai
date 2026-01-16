@@ -9,6 +9,7 @@ import fi.iki.elonen.NanoHTTPD
 import java.io.IOException
 import java.io.PipedInputStream
 import java.io.PipedOutputStream
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -320,12 +321,12 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
                     val id = "chatcmpl-${System.currentTimeMillis()}"
                     val created = System.currentTimeMillis() / 1000
                     var tokenCount = 0
-                    var streamClosed = false
+                    val streamClosed = AtomicBoolean(false)
                     
                     // Start the stream
                     streamJob = model.generateStream(prompt, config) { token ->
                         // Check if stream is already closed, if so, don't process more tokens
-                        if (streamClosed) {
+                        if (streamClosed.get()) {
                             return@generateStream
                         }
                         
@@ -357,13 +358,10 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
                         } catch (e: IOException) {
                             // Client disconnected or pipe closed - stop streaming gracefully
                             LogManager.d(TAG, "Client disconnected during streaming (token #$tokenCount)")
-                            streamClosed = true
-                            // Cancel the streaming job to stop generating more tokens
-                            streamJob?.cancel()
+                            streamClosed.set(true)
                         } catch (e: Exception) {
                             LogManager.e(TAG, "Error writing token to stream", e)
-                            streamClosed = true
-                            streamJob?.cancel()
+                            streamClosed.set(true)
                         }
                     }
                     
@@ -371,7 +369,7 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
                     streamJob?.join()
                     
                     // Only send final chunks if stream is not closed
-                    if (!streamClosed) {
+                    if (!streamClosed.get()) {
                         try {
                             // Send final chunk with finish_reason
                             val finalChunk = mapOf(
@@ -402,8 +400,8 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
                     writer.close()
                 } catch (e: Exception) {
                     LogManager.e(TAG, "Error in chat streaming", e)
-                    streamJob?.cancel()
                 } finally {
+                    streamJob?.cancel()
                     try {
                         pipedOutputStream.close()
                     } catch (e: IOException) {
@@ -447,12 +445,12 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
                     val id = "cmpl-${System.currentTimeMillis()}"
                     val created = System.currentTimeMillis() / 1000
                     var tokenCount = 0
-                    var streamClosed = false
+                    val streamClosed = AtomicBoolean(false)
                     
                     // Start the stream
                     streamJob = model.generateStream(prompt, config) { token ->
                         // Check if stream is already closed, if so, don't process more tokens
-                        if (streamClosed) {
+                        if (streamClosed.get()) {
                             return@generateStream
                         }
                         
@@ -482,13 +480,10 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
                         } catch (e: IOException) {
                             // Client disconnected or pipe closed - stop streaming gracefully
                             LogManager.d(TAG, "Client disconnected during streaming (token #$tokenCount)")
-                            streamClosed = true
-                            // Cancel the streaming job to stop generating more tokens
-                            streamJob?.cancel()
+                            streamClosed.set(true)
                         } catch (e: Exception) {
                             LogManager.e(TAG, "Error writing token to stream", e)
-                            streamClosed = true
-                            streamJob?.cancel()
+                            streamClosed.set(true)
                         }
                     }
                     
@@ -496,7 +491,7 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
                     streamJob?.join()
                     
                     // Only send final chunks if stream is not closed
-                    if (!streamClosed) {
+                    if (!streamClosed.get()) {
                         try {
                             // Send final chunk with finish_reason
                             val finalChunk = mapOf(
@@ -527,8 +522,8 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel, priv
                     writer.close()
                 } catch (e: Exception) {
                     LogManager.e(TAG, "Error in completion streaming", e)
-                    streamJob?.cancel()
                 } finally {
+                    streamJob?.cancel()
                     try {
                         pipedOutputStream.close()
                     } catch (e: IOException) {
