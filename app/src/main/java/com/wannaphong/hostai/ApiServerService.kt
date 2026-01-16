@@ -122,7 +122,8 @@ class ApiServerService : Service() {
             try {
                 stopForeground(true)
             } catch (ex: Exception) {
-                // Ignore errors when stopping foreground
+                // Ignore IllegalStateException if service wasn't actually in foreground state
+                LogManager.w(TAG, "Error stopping foreground service (service may not have been started): ${ex.message}")
             }
             false
         }

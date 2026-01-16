@@ -171,17 +171,21 @@ class MainActivity : AppCompatActivity() {
                         getString(R.string.notification_permission_required),
                         Toast.LENGTH_LONG
                     ).show()
-                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    requestNotificationPermission()
                 }
                 else -> {
-                    // Request permission
-                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    // Request permission directly
+                    requestNotificationPermission()
                 }
             }
         } else {
             // No permission needed for older Android versions
             proceedToStartServer()
         }
+    }
+    
+    private fun requestNotificationPermission() {
+        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
     
     private fun proceedToStartServer() {
