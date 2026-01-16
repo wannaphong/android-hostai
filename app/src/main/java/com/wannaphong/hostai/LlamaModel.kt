@@ -223,8 +223,9 @@ class LlamaModel(private val contentResolver: ContentResolver) {
                 suspendCancellableCoroutine<Unit> { continuation ->
                     val resumed = AtomicBoolean(false)
                     
-                    // Check if conversation is available
-                    if (conversation == null) {
+                    // Check if conversation is available and capture in local variable
+                    val currentConversation = conversation
+                    if (currentConversation == null) {
                         val error = IllegalStateException("Conversation is not initialized")
                         LogManager.e(TAG, "Cannot send message: conversation is null")
                         continuation.resumeWithException(error)
@@ -258,7 +259,7 @@ class LlamaModel(private val contentResolver: ContentResolver) {
                     }
                     
                     val userMessage = Message.of(prompt)
-                    conversation.sendMessageAsync(userMessage, callback)
+                    currentConversation.sendMessageAsync(userMessage, callback)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Streaming failed", e)
