@@ -68,14 +68,14 @@ class LlamaModel(private val contentResolver: ContentResolver) {
                     val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
                     val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
                     if (cursor.moveToFirst() && nameIndex >= 0 && sizeIndex >= 0) {
-                        modelName = cursor.getString(nameIndex)
+                        val name = cursor.getString(nameIndex)
+                        if (name != null) {
+                            modelName = name
+                        }
                         val fileSize = cursor.getLong(sizeIndex)
                         LogManager.i(TAG, "Model file info: $modelName (${fileSize / 1024 / 1024} MB)")
                     }
                 }
-            } catch (e: Exception) {
-                LogManager.w(TAG, "Could not query content URI for file info: ${e.message}")
-            }
             } catch (e: Exception) {
                 LogManager.w(TAG, "Could not query content URI for file info: ${e.message}")
             }
