@@ -1,8 +1,6 @@
 package com.wannaphong.hostai
 
 import android.content.ContentResolver
-import android.net.Uri
-import android.provider.OpenableColumns
 import android.util.Log
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Conversation
@@ -16,9 +14,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.receiveAsFlow
-import kotlinx.coroutines.launch
 import java.io.File
 
 /**
@@ -67,53 +62,24 @@ class LlamaModel(private val contentResolver: ContentResolver) {
             return true
         }
         
-        // Check if it's a content URI or file path
-        if (modelPath.startsWith("content://")) {
-            // It's a content URI - query for file info
-            try {
-                val uri = Uri.parse(modelPath)
-                contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-                    val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                    val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
-                    if (cursor.moveToFirst() && nameIndex >= 0 && sizeIndex >= 0) {
-                        val name = cursor.getString(nameIndex)
-                        if (name != null) {
-                            modelName = name
-                        }
-                        val fileSize = cursor.getLong(sizeIndex)
-                        LogManager.i(TAG, "Model file info: $modelName (${fileSize / 1024 / 1024} MB)")
-                    }
-                }
-            } catch (e: Exception) {
-                LogManager.w(TAG, "Could not query content URI for file info: ${e.message}")
-            }
+        // It's a file path
+        val file = File(modelPath)
+        if (file.exists()) {
+            modelName = file.name
+            LogManager.i(TAG, "Model file found: $modelName (${file.length() / 1024 / 1024} MB)")
         } else {
-            // It's a file path
-            val file = File(modelPath)
-            if (file.exists()) {
-                modelName = file.name
-                LogManager.i(TAG, "Model file found: $modelName (${file.length() / 1024 / 1024} MB)")
-            } else {
-                LogManager.e(TAG, "Model file not found at path: $modelPath")
-            }
+            LogManager.e(TAG, "Model file not found at path: $modelPath")
+            return false
         }
         
         return try {
             LogManager.i(TAG, "Initializing LiteRT with model: $modelName")
             
-            // Convert content:// URI to file path if needed
-            val actualModelPath = if (modelPath.startsWith("content://")) {
-                // For content URIs, we need to use the file path directly
-                // The file was already copied to internal storage by MainActivity
-                modelPath
-            } else {
-                modelPath
-            }
-            
-            // Create engine config with GPU backend for better performance
+            // Create engine config with CPU backend by default
+            // GPU can provide better performance on supported devices
             val engineConfig = EngineConfig(
-                modelPath = actualModelPath,
-                backend = Backend.CPU,  // Start with CPU, can be changed to GPU if needed
+                modelPath = modelPath,
+                backend = Backend.CPU,  // Start with CPU for compatibility
                 maxNumTokens = DEFAULT_MAX_TOKENS
             )
             

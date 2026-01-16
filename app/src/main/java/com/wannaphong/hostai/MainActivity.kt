@@ -356,18 +356,11 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             
-            // Create a content URI from the internal file using FileProvider
-            val contentUri = FileProvider.getUriForFile(
-                this,
-                "${applicationContext.packageName}.fileprovider",
-                internalFile
-            )
-            
-            selectedModelPath = contentUri.toString()
+            // Use the internal file path directly for LiteRT
+            selectedModelPath = internalFile.absolutePath
             selectedModelName = validFileName
             
             LogManager.i("MainActivity", "Model file copied successfully to: ${internalFile.absolutePath}")
-            LogManager.i("MainActivity", "Content URI created: $contentUri")
             Toast.makeText(this, "Model selected: $validFileName", Toast.LENGTH_SHORT).show()
             updateUI()
             
