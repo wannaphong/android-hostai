@@ -101,41 +101,48 @@ Java_com_wannaphong_hostai_LlamaModel_nativeGenerate(
     LOGI("Generating response for prompt: %s", prompt_string.c_str());
     LOGI("Max tokens: %d, Temperature: %.2f", max_tokens, temperature);
     
-    // Update sampler temperature
+    // Update sampler temperature if needed (recreating is simple and safe for this use case)
     llama_sampler_free(llamaCtx->sampler);
     llama_sampler_chain_params sparams = llama_sampler_chain_default_params();
     llamaCtx->sampler = llama_sampler_chain_init(sparams);
     llama_sampler_chain_add(llamaCtx->sampler, llama_sampler_init_temp(temperature));
     llama_sampler_chain_add(llamaCtx->sampler, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
     
-    // Tokenize the prompt
+    // Tokenize the prompt - allocate buffer with reasonable size
     std::vector<llama_token> tokens;
+    // Pre-allocate based on typical token-to-char ratio (1 token per 3-4 chars is common)
+    tokens.resize(prompt_string.length() + 256);
+    
     int n_tokens_prompt = llama_tokenize(
-        llamaCtx->model,
-        prompt_string.c_str(),
-        prompt_string.length(),
-        nullptr,
-        0,
-        true,  // add_special
-        false  // parse_special
-    );
-    
-    if (n_tokens_prompt < 0) {
-        LOGE("Failed to tokenize prompt");
-        return env->NewStringUTF("Error: Failed to tokenize prompt");
-    }
-    
-    tokens.resize(n_tokens_prompt);
-    n_tokens_prompt = llama_tokenize(
         llamaCtx->model,
         prompt_string.c_str(),
         prompt_string.length(),
         tokens.data(),
         tokens.size(),
-        true,
-        false
+        true,  // add_special
+        false  // parse_special
     );
     
+    if (n_tokens_prompt < 0) {
+        LOGE("Failed to tokenize prompt: buffer too small");
+        // Retry with larger buffer
+        tokens.resize(-n_tokens_prompt);
+        n_tokens_prompt = llama_tokenize(
+            llamaCtx->model,
+            prompt_string.c_str(),
+            prompt_string.length(),
+            tokens.data(),
+            tokens.size(),
+            true,
+            false
+        );
+        if (n_tokens_prompt < 0) {
+            LOGE("Failed to tokenize prompt after resize");
+            return env->NewStringUTF("Error: Failed to tokenize prompt");
+        }
+    }
+    
+    tokens.resize(n_tokens_prompt);
     LOGI("Tokenized prompt into %d tokens", n_tokens_prompt);
     
     // Clear KV cache
@@ -160,11 +167,18 @@ Java_com_wannaphong_hostai_LlamaModel_nativeGenerate(
             break;
         }
         
-        // Decode token to text
-        char buf[256];
-        int n = llama_token_to_piece(llamaCtx->model, new_token, buf, sizeof(buf), 0, false);
-        if (n > 0) {
-            result.append(buf, n);
+        // Decode token to text with larger buffer for safety
+        std::vector<char> buf(512);
+        int n = llama_token_to_piece(llamaCtx->model, new_token, buf.data(), buf.size(), 0, false);
+        if (n > 0 && n < static_cast<int>(buf.size())) {
+            result.append(buf.data(), n);
+        } else if (n >= static_cast<int>(buf.size())) {
+            // Buffer was too small, retry with exact size
+            buf.resize(n + 1);
+            n = llama_token_to_piece(llamaCtx->model, new_token, buf.data(), buf.size(), 0, false);
+            if (n > 0) {
+                result.append(buf.data(), n);
+            }
         }
         
         // Feed the new token back for next prediction
