@@ -53,12 +53,24 @@
 ┌─────────────────────────────────────────────────────────────────┐
 │                         Model Layer                              │
 │  ┌───────────────────────────────────────────────────────────┐  │
-│  │            LlamaModel (47 lines)                          │  │
-│  │  - Mock implementation                                    │  │
-│  │  - generate() method                                      │  │
+│  │            LlamaModel (95+ lines)                         │  │
+│  │  - JNI bindings to native code                            │  │
+│  │  - System.loadLibrary("hostai")                           │  │
+│  │  - generate() method → nativeGenerate()                   │  │
 │  │  - generateStream() method                                │  │
+│  │  - Native context management                              │  │
+│  └───────────────────────────────────────────────────────────┘  │
+│                               │                                   │
+│                               │ JNI                               │
+│                               ▼                                   │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │      Native Layer (C++ via JNI)                           │  │
+│  │      app/src/main/cpp/llama_jni.cpp                       │  │
+│  │  - JNI wrapper functions                                  │  │
+│  │  - LlamaContext management                                │  │
+│  │  - Interface ready for llama.cpp integration              │  │
 │  │                                                           │  │
-│  │  [Future: JNI bindings to llama.cpp native library]      │  │
+│  │  [Ready for: llama.cpp model loading & inference]        │  │
 │  └───────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────┘
 
@@ -108,10 +120,11 @@ Data Flow Example (Chat Completion):
 Technology Stack:
 
 ┌─────────────────────────────────────────────────────────────────┐
-│ Language:     Kotlin                                             │
+│ Language:     Kotlin + C++ (JNI)                                 │
 │ Min SDK:      24 (Android 7.0)                                   │
 │ Target SDK:   34 (Android 14)                                    │
 │ Build:        Gradle 8.2, AGP 8.1.4                              │
+│ Native:       NDK, CMake 3.22.1                                  │
 │ UI:           Material Design 3, View Binding                    │
 │ Server:       NanoHTTPD 2.3.1                                    │
 │ JSON:         Gson 2.10.1                                        │
@@ -136,21 +149,29 @@ Security Considerations:
 
 Future Integration Points:
 
-1. llama.cpp Native Library
+1. llama.cpp Native Library - NOW IMPLEMENTED ✓
    ┌────────────────────────────────────────┐
    │ app/src/main/cpp/                      │
-   │  ├── llama.cpp/                        │
-   │  ├── jni_wrapper.cpp                   │
-   │  └── CMakeLists.txt                    │
+   │  ├── llama_jni.cpp        ✓            │
+   │  ├── CMakeLists.txt       ✓            │
+   │  ├── README.md            ✓            │
+   │  └── [llama.cpp sources]  TODO        │
    └────────────────────────────────────────┘
    
-2. JNI Bindings in LlamaModel.kt
-   external fun loadModelNative(path: String): Long
-   external fun generateNative(context: Long, prompt: String): String
+2. JNI Bindings in LlamaModel.kt - NOW IMPLEMENTED ✓
+   System.loadLibrary("hostai")
+   external fun nativeInit(): Long
+   external fun nativeLoadModel(contextPtr: Long, modelPath: String): Boolean
+   external fun nativeGenerate(...): String
    
-3. Model Storage
+3. Model Storage - TODO
    - Internal storage for model files
    - Download manager for GGUF models
    - Model selection UI
+
+4. Complete llama.cpp Integration - TODO
+   - Add llama.cpp source files or library
+   - Update CMakeLists.txt to build llama.cpp
+   - Implement actual llama.cpp API calls in llama_jni.cpp
 
 ═══════════════════════════════════════════════════════════════════

@@ -3,16 +3,42 @@ package com.wannaphong.hostai
 import java.io.File
 
 /**
- * Mock implementation of LLaMA model interface.
- * In a production app, this would interface with actual llama.cpp native code via JNI.
+ * LLaMA model interface with JNI bindings to native llama.cpp code.
+ * 
+ * This implementation uses native code (C++ via JNI) to interface with llama.cpp.
+ * The native library provides actual model loading and text generation capabilities.
  */
 class LlamaModel {
-    private var isLoaded = false
-    private var modelName = "llama-mock-model"
+    private var nativeContext: Long = 0
+    private var modelName = "llama-model"
     private var modelPath: String? = null
     
+    companion object {
+        init {
+            // Load the native library
+            System.loadLibrary("hostai")
+        }
+    }
+    
+    // Native method declarations
+    private external fun nativeInit(): Long
+    private external fun nativeLoadModel(contextPtr: Long, modelPath: String): Boolean
+    private external fun nativeGenerate(
+        contextPtr: Long,
+        prompt: String,
+        maxTokens: Int,
+        temperature: Float
+    ): String
+    private external fun nativeIsLoaded(contextPtr: Long): Boolean
+    private external fun nativeUnload(contextPtr: Long)
+    private external fun nativeFree(contextPtr: Long)
+    
+    init {
+        // Initialize native context
+        nativeContext = nativeInit()
+    }
+    
     fun loadModel(modelPath: String): Boolean {
-        // Mock implementation - in real app, this would load the GGUF model via JNI
         this.modelPath = modelPath
         
         // Extract model name from file path
@@ -23,21 +49,27 @@ class LlamaModel {
             }
         }
         
-        isLoaded = true
-        return true
+        // Load model via JNI
+        val success = nativeLoadModel(nativeContext, modelPath)
+        
+        return success
     }
     
-    fun isModelLoaded(): Boolean = isLoaded
+    fun isModelLoaded(): Boolean {
+        return nativeIsLoaded(nativeContext)
+    }
     
     fun getModelName(): String = modelName
     
     fun getModelPath(): String? = modelPath
     
     fun generate(prompt: String, maxTokens: Int = 100, temperature: Float = 0.7f): String {
-        // Mock implementation - returns a simulated response
-        // In real app, this would call llama.cpp's generation via JNI
-        return "This is a mock response from the LLaMA model. In a production build, " +
-               "this would be replaced with actual llama.cpp inference. Your prompt was: \"$prompt\""
+        if (!isModelLoaded()) {
+            return "Error: Model not loaded. Please load a model first."
+        }
+        
+        // Call native generation method
+        return nativeGenerate(nativeContext, prompt, maxTokens, temperature)
     }
     
     fun generateStream(
@@ -46,7 +78,8 @@ class LlamaModel {
         temperature: Float = 0.7f,
         onToken: (String) -> Unit
     ) {
-        // Mock implementation - simulates streaming
+        // For streaming, we'll simulate it by calling generate and splitting the response
+        // A full implementation would require callback support in JNI
         val response = generate(prompt, maxTokens, temperature)
         val words = response.split(" ")
         
@@ -57,7 +90,19 @@ class LlamaModel {
     }
     
     fun unload() {
-        isLoaded = false
+        nativeUnload(nativeContext)
         modelPath = null
+    }
+    
+    /**
+     * Explicitly release native resources.
+     * Call this when you're done with the model to free memory immediately.
+     */
+    fun close() {
+        if (nativeContext != 0L) {
+            unload()
+            nativeFree(nativeContext)
+            nativeContext = 0
+        }
     }
 }

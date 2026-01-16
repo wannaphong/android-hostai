@@ -1,0 +1,8 @@
+# This file will be created when you run: ./add_llama_cpp.sh
+# Or manually when you add llama.cpp as a submodule:
+# cd app/src/main/cpp && git submodule add https://github.com/ggerganov/llama.cpp.git
+
+# Example content after adding submodule:
+# [submodule "app/src/main/cpp/llama.cpp"]
+#     path = app/src/main/cpp/llama.cpp
+#     url = https://github.com/ggerganov/llama.cpp.git
