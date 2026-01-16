@@ -201,12 +201,14 @@ class LlamaModel(private val contentResolver: ContentResolver) {
                         }
                         is LlamaHelper.LLMEvent.Error -> {
                             Log.e(TAG, "Streaming error: ${event.message}")
+                            LogManager.e(TAG, "Streaming error: ${event.message}")
                         }
                         else -> {}
                     }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Streaming failed", e)
+                LogManager.e(TAG, "Streaming failed", e)
             }
         }
         
@@ -232,12 +234,14 @@ class LlamaModel(private val contentResolver: ContentResolver) {
      */
     fun close() {
         try {
+            LogManager.i(TAG, "Closing model and releasing resources")
             llamaHelper.abort()
             llamaHelper.release()
             scope.cancel()
             isLoaded = false
         } catch (e: Exception) {
             Log.e(TAG, "Error closing model", e)
+            LogManager.e(TAG, "Error closing model", e)
         }
     }
 }

@@ -265,6 +265,7 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel) : Na
             session.parseBody(map)
         } catch (e: IOException) {
             Log.e(TAG, "Failed to parse request body", e)
+            LogManager.e(TAG, "Failed to parse request body", e)
         }
         return map["postData"] ?: ""
     }
