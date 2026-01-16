@@ -247,7 +247,7 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel) : Na
                     var tokenCount = 0
                     
                     // Start the stream
-                    model.generateStream(prompt, maxTokens, temperature) { token ->
+                    val streamJob = model.generateStream(prompt, maxTokens, temperature) { token ->
                         try {
                             tokenCount++
                             
@@ -278,8 +278,8 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel) : Na
                         }
                     }
                     
-                    // Wait a bit for the last token to be processed
-                    kotlinx.coroutines.delay(100)
+                    // Wait for streaming to complete
+                    streamJob?.join()
                     
                     // Send final chunk with finish_reason
                     val finalChunk = mapOf(
@@ -344,7 +344,7 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel) : Na
                     var tokenCount = 0
                     
                     // Start the stream
-                    model.generateStream(prompt, maxTokens, temperature) { token ->
+                    val streamJob = model.generateStream(prompt, maxTokens, temperature) { token ->
                         try {
                             tokenCount++
                             
@@ -373,8 +373,8 @@ class OpenAIApiServer(private val port: Int, private val model: LlamaModel) : Na
                         }
                     }
                     
-                    // Wait a bit for the last token to be processed
-                    kotlinx.coroutines.delay(100)
+                    // Wait for streaming to complete
+                    streamJob?.join()
                     
                     // Send final chunk with finish_reason
                     val finalChunk = mapOf(
