@@ -102,7 +102,29 @@ class MainActivity : AppCompatActivity() {
             openLogViewer()
         }
         
+        binding.exitButton.setOnClickListener {
+            exitApp()
+        }
+        
         updateUI()
+    }
+    
+    private fun exitApp() {
+        LogManager.i("MainActivity", "User requested to exit app")
+        
+        // Stop server if running
+        if (isServerRunning()) {
+            stopServer()
+        }
+        
+        // Unbind service
+        if (isBound) {
+            unbindService(serviceConnection)
+            isBound = false
+        }
+        
+        // Finish activity and exit
+        finishAffinity()
     }
     
     private fun bindToService() {

@@ -31,6 +31,7 @@ class ApiServerService : Service() {
         
         const val ACTION_START = "com.wannaphong.hostai.ACTION_START"
         const val ACTION_STOP = "com.wannaphong.hostai.ACTION_STOP"
+        const val ACTION_STOP_FROM_NOTIFICATION = "com.wannaphong.hostai.ACTION_STOP_FROM_NOTIFICATION"
         const val EXTRA_PORT = "port"
         const val EXTRA_MODEL_PATH = "model_path"
     }
@@ -55,7 +56,7 @@ class ApiServerService : Service() {
                 val modelPath = intent.getStringExtra(EXTRA_MODEL_PATH) ?: "mock-model"
                 startServer(port, modelPath)
             }
-            ACTION_STOP -> {
+            ACTION_STOP, ACTION_STOP_FROM_NOTIFICATION -> {
                 stopServer()
                 stopSelf()
             }
@@ -144,12 +145,28 @@ class ApiServerService : Service() {
             PendingIntent.FLAG_IMMUTABLE
         )
         
+        // Create stop action for notification
+        val stopIntent = Intent(this, ApiServerService::class.java).apply {
+            action = ACTION_STOP_FROM_NOTIFICATION
+        }
+        val stopPendingIntent = PendingIntent.getService(
+            this,
+            0,
+            stopIntent,
+            PendingIntent.FLAG_IMMUTABLE
+        )
+        
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(getString(R.string.notification_title))
             .setContentText(getString(R.string.notification_text, "http://localhost:$port"))
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
+            .addAction(
+                android.R.drawable.ic_menu_close_clear_cancel,
+                getString(R.string.notification_stop_action),
+                stopPendingIntent
+            )
             .build()
     }
     
