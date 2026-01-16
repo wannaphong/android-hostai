@@ -67,7 +67,7 @@ Java_com_wannaphong_hostai_LlamaModel_nativeLoadModel(
     
     if (!llamaCtx->ctx) {
         LOGE("Failed to create context");
-        llama_free_model(llamaCtx->model);
+        llama_model_free(llamaCtx->model);
         llamaCtx->model = nullptr;
         return JNI_FALSE;
     }
@@ -108,13 +108,16 @@ Java_com_wannaphong_hostai_LlamaModel_nativeGenerate(
     llama_sampler_chain_add(llamaCtx->sampler, llama_sampler_init_temp(temperature));
     llama_sampler_chain_add(llamaCtx->sampler, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
     
+    // Get vocab from model
+    const llama_vocab *vocab = llama_model_get_vocab(llamaCtx->model);
+    
     // Tokenize the prompt - allocate buffer with reasonable size
     std::vector<llama_token> tokens;
     // Pre-allocate based on typical token-to-char ratio (1 token per 3-4 chars is common)
     tokens.resize(prompt_string.length() + 256);
     
     int n_tokens_prompt = llama_tokenize(
-        llamaCtx->model,
+        vocab,
         prompt_string.c_str(),
         prompt_string.length(),
         tokens.data(),
@@ -128,7 +131,7 @@ Java_com_wannaphong_hostai_LlamaModel_nativeGenerate(
         // Retry with larger buffer
         tokens.resize(-n_tokens_prompt);
         n_tokens_prompt = llama_tokenize(
-            llamaCtx->model,
+            vocab,
             prompt_string.c_str(),
             prompt_string.length(),
             tokens.data(),
@@ -162,20 +165,20 @@ Java_com_wannaphong_hostai_LlamaModel_nativeGenerate(
         llama_token new_token = llama_sampler_sample(llamaCtx->sampler, llamaCtx->ctx, -1);
         
         // Check for end of generation
-        if (llama_token_is_eog(llamaCtx->model, new_token)) {
+        if (llama_vocab_is_eog(vocab, new_token)) {
             LOGI("End of generation at token %d", i);
             break;
         }
         
         // Decode token to text with larger buffer for safety
         std::vector<char> buf(512);
-        int n = llama_token_to_piece(llamaCtx->model, new_token, buf.data(), buf.size(), 0, false);
+        int n = llama_token_to_piece(vocab, new_token, buf.data(), buf.size(), 0, false);
         if (n > 0 && n < static_cast<int>(buf.size())) {
             result.append(buf.data(), n);
         } else if (n >= static_cast<int>(buf.size())) {
             // Buffer was too small, retry with exact size
             buf.resize(n + 1);
-            n = llama_token_to_piece(llamaCtx->model, new_token, buf.data(), buf.size(), 0, false);
+            n = llama_token_to_piece(vocab, new_token, buf.data(), buf.size(), 0, false);
             if (n > 0) {
                 result.append(buf.data(), n);
             }
@@ -225,7 +228,7 @@ Java_com_wannaphong_hostai_LlamaModel_nativeUnload(JNIEnv *env, jobject thiz, jl
     }
     
     if (llamaCtx->model) {
-        llama_free_model(llamaCtx->model);
+        llama_model_free(llamaCtx->model);
         llamaCtx->model = nullptr;
     }
     
@@ -249,7 +252,7 @@ Java_com_wannaphong_hostai_LlamaModel_nativeFree(JNIEnv *env, jobject thiz, jlon
         llama_free(llamaCtx->ctx);
     }
     if (llamaCtx->model) {
-        llama_free_model(llamaCtx->model);
+        llama_model_free(llamaCtx->model);
     }
     
     delete llamaCtx;
