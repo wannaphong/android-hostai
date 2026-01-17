@@ -350,7 +350,7 @@ class LlamaModel(private val contentResolver: ContentResolver) {
         temperature: Float = 0.7f,
         onToken: (String) -> Unit
     ): Job? {
-        return generateStream(prompt, GenerationConfig(maxTokens = maxTokens, temperature = temperature.toDouble()), onToken)
+        return generateStream(prompt, GenerationConfig(maxTokens = maxTokens, temperature = temperature.toDouble()), DEFAULT_SESSION_ID, onToken)
     }
     
     /**
