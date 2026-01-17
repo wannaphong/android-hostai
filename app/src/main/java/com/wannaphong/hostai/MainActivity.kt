@@ -357,7 +357,7 @@ class MainActivity : AppCompatActivity() {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "*/*"
-            // Filter for .gguf files
+            // Filter for .litertlm files
             putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("*/*"))
         }
         filePickerLauncher.launch(intent)
@@ -388,10 +388,9 @@ class MainActivity : AppCompatActivity() {
             // Validate file name and extension
             val validFileName = fileName
             if (validFileName == null || 
-                (!validFileName.endsWith(".gguf", ignoreCase = true) && 
-                 !validFileName.endsWith(".litertlm", ignoreCase = true))) {
+                (!validFileName.endsWith(".litertlm", ignoreCase = true))) {
                 LogManager.w("MainActivity", "Invalid file type selected: $fileName")
-                Toast.makeText(this, "Please select a GGUF or LiteRT model file (.gguf or .litertlm)", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Please select a LiteRT model file (.litertlm)", Toast.LENGTH_SHORT).show()
                 return
             }
             
