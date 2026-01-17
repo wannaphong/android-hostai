@@ -446,36 +446,58 @@ class MainActivity : AppCompatActivity() {
                 return
             }
             
-            // Copy file to internal storage
-            LogManager.i("MainActivity", "Copying file to internal storage...")
-            val internalFile = File(filesDir, validFileName)
+            // Show progress
+            Toast.makeText(this, "Adding model...", Toast.LENGTH_SHORT).show()
+            
+            // Copy file to temporary location first
+            LogManager.i("MainActivity", "Copying file to temporary storage...")
+            val tempFile = File.createTempFile("model_temp", ".litertlm", cacheDir)
             contentResolver.openInputStream(uri)?.use { input ->
-                FileOutputStream(internalFile).use { output ->
+                FileOutputStream(tempFile).use { output ->
                     input.copyTo(output)
                 }
             }
             
-            // Use the internal file path directly for LiteRT
-            selectedModelPath = internalFile.absolutePath
-            selectedModelName = validFileName
+            // Add model using ModelManager
+            val model = modelManager.addModel(tempFile.absolutePath, validFileName)
             
-            LogManager.i("MainActivity", "Model file copied successfully to: ${internalFile.absolutePath}")
-            Toast.makeText(this, "Model selected: $validFileName", Toast.LENGTH_SHORT).show()
-            updateUI()
+            // Delete temp file
+            tempFile.delete()
             
-            // If server was running before model change, restart it with the new model
-            if (wasServerRunningBeforeModelChange) {
-                wasServerRunningBeforeModelChange = false
-                LogManager.i("MainActivity", "Restarting server with new model")
-                binding.root.postDelayed({
-                    startServer()
-                }, 500)
+            if (model != null) {
+                // Set as selected model
+                modelManager.setSelectedModelId(model.id)
+                selectedModelPath = model.path
+                selectedModelName = model.name
+                
+                LogManager.i("MainActivity", "Model added and selected: ${model.name}")
+                Toast.makeText(this, "Model selected: $validFileName", Toast.LENGTH_SHORT).show()
+                updateUI()
+                
+                // If server was running before model change, restart it with the new model
+                if (wasServerRunningBeforeModelChange) {
+                    wasServerRunningBeforeModelChange = false
+                    LogManager.i("MainActivity", "Restarting server with new model")
+                    binding.root.postDelayed({
+                        startServer()
+                    }, 500)
+                }
+            } else {
+                LogManager.e("MainActivity", "Failed to add model")
+                Toast.makeText(this, "Failed to add model", Toast.LENGTH_LONG).show()
             }
             
         } catch (e: Exception) {
             LogManager.e("MainActivity", "Failed to load model file", e)
             Toast.makeText(this, "Failed to load model: ${e.message}", Toast.LENGTH_LONG).show()
         }
+    }
+    
+    override fun onResume() {
+        super.onResume()
+        // Reload selected model from manager in case it was changed
+        loadSelectedModelFromManager()
+        updateUI()
     }
     
     override fun onDestroy() {
