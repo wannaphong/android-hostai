@@ -561,7 +561,7 @@
                                     <v-text-field density='compact' class="px-2"
                                         :label="$t('$vuetify.dataIterator.i.conversationId')"
                                         v-model="chatbotStore.conversation_id" variant="outlined"
-                                        :rules="[value => !!value || 'Conversation ID is required', value => /^[a-zA-Z0-9\-_.@]+$/.test(value) || 'Only letters, numbers, -, _, ., @ allowed']">
+                                        :rules="[value => !!value || $t('$vuetify.dataIterator.validation.conversationIdRequired'), value => /^[a-zA-Z0-9\-_.@]+$/.test(value) || $t('$vuetify.dataIterator.validation.conversationIdInvalid')]">
                                     </v-text-field>
                                 </v-expansion-panel-text>
                             </v-expansion-panel>
@@ -2510,6 +2510,10 @@
                             authPrefix: 'Auth Prefix',
                             configFile: 'Config File'
                         },
+                        validation: {
+                            conversationIdRequired: 'Conversation ID is required',
+                            conversationIdInvalid: 'Only letters, numbers, -, _, ., @ allowed'
+                        },
                         snackbar: {
                             addnew: 'Added new session.',
                             addfail: 'Already in a fresh session.',
@@ -2547,6 +2551,10 @@
                             authPrefix: 'Auth Prefix',
                             configFile: 'File di Configurazione'
                         },
+                        validation: {
+                            conversationIdRequired: 'ID Conversazione è richiesto',
+                            conversationIdInvalid: 'Solo lettere, numeri, -, _, ., @ consentiti'
+                        },
                         snackbar: {
                             addnew: 'Aggiunta nuova sessione.',
                             addfail: 'Già in una nuova sessione.',
@@ -2570,10 +2578,17 @@
                             title: 'インターフェイス構成',
                             apikey: 'API キー',
                             endpoint: '端点',
+                            url: 'URL',
+                            path: 'パス',
+                            model: 'モデル',
                             conversationId: '会話 ID',
                             contentType: 'コンテンツタイプ',
                             authPrefix: 'リクエストヘッダー',
                             configFile: 'プロファイル'
+                        },
+                        validation: {
+                            conversationIdRequired: '会話 ID は必須です',
+                            conversationIdInvalid: '文字、数字、-, _, ., @ のみ使用可能'
                         },
                         snackbar: {
                             addnew: '新しいセッションが追加されました',
@@ -2604,6 +2619,10 @@
                             conversationId: 'Konversations-ID',
                             stream: 'Strömma',
                             configFile: 'Konfigurationsfil'
+                        },
+                        validation: {
+                            conversationIdRequired: 'Konversations-ID krävs',
+                            conversationIdInvalid: 'Endast bokstäver, siffror, -, _, ., @ tillåtna'
                         },
                         snackbar: {
                             addnew: 'En ny session har lagts till.',
@@ -2651,6 +2670,10 @@
                             contentType: '媒体类型',
                             authPrefix: '鉴权请求头',
                             configFile: '配置文件'
+                        },
+                        validation: {
+                            conversationIdRequired: '会话 ID 必填',
+                            conversationIdInvalid: '仅允许字母、数字、-、_、.、@ 字符'
                         },
                         snackbar: {
                             addnew: '已添加新会话',
