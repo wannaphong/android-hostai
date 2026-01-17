@@ -27,7 +27,7 @@ The server implements the following OpenAI-compatible endpoints:
 ### Prerequisites
 
 - Android Studio (2022.3 or later)
-- Android SDK (API level 24+)
+- Android SDK (API level 26+)
 - JDK 8 or higher
 
 Note: With the LiteRT library integration, you no longer need to manually build llama.cpp or configure NDK/CMake.
@@ -138,7 +138,7 @@ The library handles all native code compilation and optimization, so you don't n
 
 ## Requirements
 
-- Android 7.0 (API level 24) or higher
+- Android 8.0 (API level 26) or higher
 - ARM64 or x86_64 processor (64-bit architectures)
 - Permissions: INTERNET, FOREGROUND_SERVICE, ACCESS_NETWORK_STATE, READ_EXTERNAL_STORAGE
 
