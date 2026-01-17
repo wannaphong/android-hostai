@@ -408,6 +408,7 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun handleSelectedFile(uri: Uri) {
+        var tempFile: File? = null
         try {
             LogManager.i("MainActivity", "User selected a file")
             
@@ -417,9 +418,10 @@ class MainActivity : AppCompatActivity() {
             contentResolver.query(uri, null, null, null, null)?.use { cursor ->
                 val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
                 val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
-                cursor.moveToFirst()
-                fileName = cursor.getString(nameIndex)
-                fileSize = cursor.getLong(sizeIndex)
+                if (cursor.moveToFirst()) {
+                    fileName = cursor.getString(nameIndex)
+                    fileSize = cursor.getLong(sizeIndex)
+                }
             }
             
             LogManager.i("MainActivity", "Selected file: $fileName (${fileSize / 1024 / 1024} MB)")
@@ -446,7 +448,8 @@ class MainActivity : AppCompatActivity() {
             
             // Copy file to temporary location first
             LogManager.i("MainActivity", "Copying file to temporary storage...")
-            val tempFile = File.createTempFile("model_temp", ".litertlm", cacheDir)
+            tempFile = File.createTempFile("model_temp", ".litertlm", cacheDir)
+            
             contentResolver.openInputStream(uri)?.use { input ->
                 FileOutputStream(tempFile).use { output ->
                     input.copyTo(output)
@@ -455,9 +458,6 @@ class MainActivity : AppCompatActivity() {
             
             // Add model using ModelManager
             val model = modelManager.addModel(tempFile.absolutePath, validFileName)
-            
-            // Delete temp file
-            tempFile.delete()
             
             if (model != null) {
                 // Set as selected model
@@ -485,6 +485,16 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) {
             LogManager.e("MainActivity", "Failed to load model file", e)
             Toast.makeText(this, "Failed to load model: ${e.message}", Toast.LENGTH_LONG).show()
+        } finally {
+            // Always cleanup temp file
+            tempFile?.let {
+                if (it.exists()) {
+                    val deleted = it.delete()
+                    if (!deleted) {
+                        LogManager.w("MainActivity", "Failed to delete temp file: ${it.absolutePath}")
+                    }
+                }
+            }
         }
     }
     

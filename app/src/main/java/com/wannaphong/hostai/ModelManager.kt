@@ -21,11 +21,13 @@ data class StoredModel(
 /**
  * Manager class for handling model storage and management.
  * Stores model metadata in SharedPreferences and manages model files in internal storage.
+ * Thread-safe for concurrent access.
  */
 class ModelManager(private val context: Context) {
     
     private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val gson = Gson()
+    private val lock = Any()  // Synchronization lock for thread safety
     
     companion object {
         private const val TAG = "ModelManager"
@@ -50,17 +52,26 @@ class ModelManager(private val context: Context) {
      * Get all stored models
      */
     fun getModels(): List<StoredModel> {
-        val json = prefs.getString(KEY_MODELS, null) ?: return emptyList()
-        val type = object : TypeToken<List<StoredModel>>() {}.type
-        return gson.fromJson(json, type)
+        synchronized(lock) {
+            return try {
+                val json = prefs.getString(KEY_MODELS, null) ?: return emptyList()
+                val type = object : TypeToken<List<StoredModel>>() {}.type
+                gson.fromJson(json, type) ?: emptyList()
+            } catch (e: Exception) {
+                LogManager.e(TAG, "Failed to parse models from preferences", e)
+                emptyList()
+            }
+        }
     }
     
     /**
      * Save models list to preferences
      */
     private fun saveModels(models: List<StoredModel>) {
-        val json = gson.toJson(models)
-        prefs.edit().putString(KEY_MODELS, json).apply()
+        synchronized(lock) {
+            val json = gson.toJson(models)
+            prefs.edit().putString(KEY_MODELS, json).apply()
+        }
     }
     
     /**
@@ -70,50 +81,69 @@ class ModelManager(private val context: Context) {
      * @return StoredModel if successful, null otherwise
      */
     fun addModel(sourcePath: String, fileName: String): StoredModel? {
-        try {
-            val sourceFile = File(sourcePath)
-            if (!sourceFile.exists()) {
-                LogManager.e(TAG, "Source file does not exist: $sourcePath")
+        synchronized(lock) {
+            var destFile: File? = null
+            try {
+                val sourceFile = File(sourcePath)
+                if (!sourceFile.exists()) {
+                    LogManager.e(TAG, "Source file does not exist: $sourcePath")
+                    return null
+                }
+                
+                // Generate unique ID
+                val id = generateModelId()
+                
+                // Copy file to models directory
+                val tempDestFile = File(getModelsDirectory(), fileName)
+                
+                // If file already exists with same name, generate unique name
+                destFile = if (tempDestFile.exists()) {
+                    val nameWithoutExt = fileName.substringBeforeLast(".")
+                    val ext = fileName.substringAfterLast(".")
+                    File(getModelsDirectory(), "${nameWithoutExt}_${System.currentTimeMillis()}.$ext")
+                } else {
+                    tempDestFile
+                }
+                
+                sourceFile.copyTo(destFile, overwrite = true)
+                
+                // Verify the copy was successful
+                if (!destFile.exists() || destFile.length() != sourceFile.length()) {
+                    LogManager.e(TAG, "File copy verification failed")
+                    destFile.delete()
+                    return null
+                }
+                
+                // Create model entry
+                val model = StoredModel(
+                    id = id,
+                    name = destFile.name,
+                    path = destFile.absolutePath,
+                    sizeBytes = destFile.length(),
+                    addedTimestamp = System.currentTimeMillis(),
+                    isSelected = false
+                )
+                
+                // Add to list
+                val models = getModels().toMutableList()
+                models.add(model)
+                saveModels(models)
+                
+                LogManager.i(TAG, "Added model: ${model.name} (${model.sizeBytes / 1024 / 1024} MB)")
+                return model
+            } catch (e: Exception) {
+                LogManager.e(TAG, "Failed to add model", e)
+                // Cleanup on failure
+                destFile?.let { 
+                    if (it.exists()) {
+                        val deleted = it.delete()
+                        if (!deleted) {
+                            LogManager.w(TAG, "Failed to cleanup partial model file: ${it.absolutePath}")
+                        }
+                    }
+                }
                 return null
             }
-            
-            // Generate unique ID
-            val id = generateModelId()
-            
-            // Copy file to models directory
-            val destFile = File(getModelsDirectory(), fileName)
-            
-            // If file already exists with same name, generate unique name
-            val finalDestFile = if (destFile.exists()) {
-                val nameWithoutExt = fileName.substringBeforeLast(".")
-                val ext = fileName.substringAfterLast(".")
-                File(getModelsDirectory(), "${nameWithoutExt}_${System.currentTimeMillis()}.$ext")
-            } else {
-                destFile
-            }
-            
-            sourceFile.copyTo(finalDestFile, overwrite = false)
-            
-            // Create model entry
-            val model = StoredModel(
-                id = id,
-                name = finalDestFile.name,
-                path = finalDestFile.absolutePath,
-                sizeBytes = finalDestFile.length(),
-                addedTimestamp = System.currentTimeMillis(),
-                isSelected = false
-            )
-            
-            // Add to list
-            val models = getModels().toMutableList()
-            models.add(model)
-            saveModels(models)
-            
-            LogManager.i(TAG, "Added model: ${model.name} (${model.sizeBytes / 1024 / 1024} MB)")
-            return model
-        } catch (e: Exception) {
-            LogManager.e(TAG, "Failed to add model", e)
-            return null
         }
     }
     
@@ -121,39 +151,57 @@ class ModelManager(private val context: Context) {
      * Remove a model by ID
      */
     fun removeModel(modelId: String): Boolean {
-        try {
-            val models = getModels().toMutableList()
-            val model = models.find { it.id == modelId } ?: return false
-            
-            // Delete file
-            val file = File(model.path)
-            if (file.exists()) {
-                file.delete()
+        synchronized(lock) {
+            try {
+                val models = getModels().toMutableList()
+                val model = models.find { it.id == modelId } ?: return false
+                
+                // Delete file
+                val file = File(model.path)
+                if (file.exists()) {
+                    val deleted = file.delete()
+                    if (!deleted) {
+                        LogManager.e(TAG, "Failed to delete model file: ${model.path}")
+                        return false
+                    }
+                }
+                
+                // Remove from list
+                models.removeIf { it.id == modelId }
+                saveModels(models)
+                
+                // Clear selection if this was the selected model
+                if (getSelectedModelId() == modelId) {
+                    setSelectedModelId(null)
+                }
+                
+                LogManager.i(TAG, "Removed model: ${model.name}")
+                return true
+            } catch (e: Exception) {
+                LogManager.e(TAG, "Failed to remove model", e)
+                return false
             }
-            
-            // Remove from list
-            models.removeIf { it.id == modelId }
-            saveModels(models)
-            
-            // Clear selection if this was the selected model
-            if (getSelectedModelId() == modelId) {
-                setSelectedModelId(null)
-            }
-            
-            LogManager.i(TAG, "Removed model: ${model.name}")
-            return true
-        } catch (e: Exception) {
-            LogManager.e(TAG, "Failed to remove model", e)
-            return false
         }
     }
     
     /**
-     * Get the selected model
+     * Get the selected model (validates file exists)
      */
     fun getSelectedModel(): StoredModel? {
-        val selectedId = getSelectedModelId() ?: return null
-        return getModels().find { it.id == selectedId }
+        synchronized(lock) {
+            val selectedId = getSelectedModelId() ?: return null
+            val model = getModels().find { it.id == selectedId } ?: return null
+            
+            // Validate that the model file still exists
+            val file = File(model.path)
+            if (!file.exists()) {
+                LogManager.w(TAG, "Selected model file not found, clearing selection: ${model.path}")
+                setSelectedModelId(null)
+                return null
+            }
+            
+            return model
+        }
     }
     
     /**
@@ -167,24 +215,34 @@ class ModelManager(private val context: Context) {
      * Set the selected model
      */
     fun setSelectedModelId(modelId: String?): Boolean {
-        try {
-            if (modelId != null) {
-                // Verify model exists
-                val model = getModels().find { it.id == modelId }
-                if (model == null) {
-                    LogManager.e(TAG, "Model not found: $modelId")
-                    return false
+        synchronized(lock) {
+            try {
+                if (modelId != null) {
+                    // Verify model exists
+                    val model = getModels().find { it.id == modelId }
+                    if (model == null) {
+                        LogManager.e(TAG, "Model not found: $modelId")
+                        return false
+                    }
+                    
+                    // Verify file exists
+                    val file = File(model.path)
+                    if (!file.exists()) {
+                        LogManager.e(TAG, "Model file not found: ${model.path}")
+                        return false
+                    }
+                    
+                    LogManager.i(TAG, "Selected model: ${model.name}")
+                } else {
+                    LogManager.i(TAG, "Cleared model selection")
                 }
-                LogManager.i(TAG, "Selected model: ${model.name}")
-            } else {
-                LogManager.i(TAG, "Cleared model selection")
+                
+                prefs.edit().putString(KEY_SELECTED_MODEL_ID, modelId).apply()
+                return true
+            } catch (e: Exception) {
+                LogManager.e(TAG, "Failed to set selected model", e)
+                return false
             }
-            
-            prefs.edit().putString(KEY_SELECTED_MODEL_ID, modelId).apply()
-            return true
-        } catch (e: Exception) {
-            LogManager.e(TAG, "Failed to set selected model", e)
-            return false
         }
     }
     
