@@ -20,9 +20,9 @@ HostAI now supports multiple concurrent conversation sessions, allowing you to m
 ### How to Use Sessions
 
 You can specify a session ID in multiple ways (in order of priority):
-1. `session_id` field in request body
-2. `conversation_id` field in request body
-3. `user` field in request body (OpenAI standard)
+1. `conversation_id` field in request body (OpenAI Conversations API standard)
+2. `user` field in request body (OpenAI standard)
+3. `session_id` field in request body
 4. `X-Session-ID` HTTP header
 
 If no session ID is provided, requests will use the "default" session.
@@ -131,14 +131,14 @@ data: [DONE]
 
 Maintain separate conversation contexts using session IDs:
 
-**Method 1: Using session_id field**
+**Method 1: Using conversation_id field (OpenAI Conversations API standard)**
 ```bash
 # User 1's conversation
 curl http://<phone-ip>:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "llama-mock-model",
-    "session_id": "user1",
+    "conversation_id": "user1",
     "messages": [
       {"role": "user", "content": "My name is Alice"}
     ]
@@ -149,7 +149,7 @@ curl http://<phone-ip>:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "llama-mock-model",
-    "session_id": "user2",
+    "conversation_id": "user2",
     "messages": [
       {"role": "user", "content": "My name is Bob"}
     ]

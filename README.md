@@ -99,8 +99,9 @@ HostAI supports multiple concurrent conversation sessions, allowing you to maint
 - Isolating different tasks or contexts
 
 Specify a session using:
-- `session_id` or `conversation_id` field in the request body
+- `conversation_id` field in the request body (OpenAI Conversations API standard)
 - `user` field (OpenAI standard)
+- `session_id` field in the request body
 - `X-Session-ID` HTTP header
 
 Example with session:
@@ -109,7 +110,7 @@ curl http://<phone-ip>:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "llama-model",
-    "user": "alice",
+    "conversation_id": "alice",
     "messages": [{"role": "user", "content": "Hello!"}]
   }'
 ```

@@ -149,12 +149,12 @@ class OpenAIApiServer(
                 <div class="endpoint">
                     <strong>POST /v1/chat/completions</strong><br>
                     Chat completion endpoint (OpenAI compatible)<br>
-                    <em>Supports multi-session via: session_id, conversation_id, user fields or X-Session-ID header</em>
+                    <em>Supports multi-session via: conversation_id, user, session_id fields or X-Session-ID header</em>
                 </div>
                 <div class="endpoint">
                     <strong>POST /v1/completions</strong><br>
                     Text completion endpoint (OpenAI compatible)<br>
-                    <em>Supports multi-session via: session_id, conversation_id, user fields or X-Session-ID header</em>
+                    <em>Supports multi-session via: conversation_id, user, session_id fields or X-Session-ID header</em>
                 </div>
                 <div class="endpoint">
                     <strong>GET /v1/sessions</strong><br>
@@ -706,18 +706,18 @@ class OpenAIApiServer(
     
     /**
      * Extract session ID from request using multiple methods in priority order:
-     * 1. session_id field
-     * 2. conversation_id field
-     * 3. user field (OpenAI standard)
+     * 1. conversation_id field (OpenAI Conversations API standard)
+     * 2. user field (OpenAI standard)
+     * 3. session_id field
      * 4. X-Session-ID header
      * 5. default session
      * 
      * Validates and sanitizes session IDs to prevent injection attacks.
      */
     private fun extractSessionId(ctx: JavalinContext, request: JsonObject): String {
-        val rawSessionId = request.get("session_id")?.asString
-            ?: request.get("conversation_id")?.asString
+        val rawSessionId = request.get("conversation_id")?.asString
             ?: request.get("user")?.asString
+            ?: request.get("session_id")?.asString
             ?: ctx.header("X-Session-ID")
             ?: "default"
         
