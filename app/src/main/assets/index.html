@@ -1682,6 +1682,11 @@
 
                 const { locale } = useI18n({ useScope: 'global' });
 
+                // Helper function to generate random conversation ID
+                const generateConversationId = () => {
+                    return 'conv_' + Math.random().toString(36).substring(2, 15);
+                };
+
                 const useLanguageStore = defineStore("languageStore", {
                     state: () => ({
                         list: [{ title: 'English', value: 'en', name: 'united-states' },
@@ -1726,7 +1731,7 @@
                             } else {
                                 this.conversation = [];
                                 // Generate random conversation_id for new conversation
-                                chatbotStore.conversation_id = 'conv_' + Math.random().toString(36).substring(2, 15);
+                                chatbotStore.conversation_id = generateConversationId();
                                 snackbarStore.showSuccessMessage('$vuetify.dataIterator.snackbar.addnew')
                             }
                         },
@@ -1989,7 +1994,7 @@
                         url: "",
                         path: "/v1/chat/completions",
                         model: "llama-model",
-                        conversation_id: 'conv_' + Math.random().toString(36).substring(2, 15),
+                        conversation_id: generateConversationId(),
                         authPrefix: "Bearer",
                         contentType: "application/json",
                         max_tokens_type: "max_tokens",
