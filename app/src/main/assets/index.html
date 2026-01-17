@@ -523,6 +523,10 @@
                                             <v-chip label color="primary" class="ma-1">
                                                 {{chatbotStore.model || "No model" }}
                                             </v-chip>
+
+                                            <v-chip label color="primary" class="ma-1">
+                                                {{chatbotStore.conversation_id}}
+                                            </v-chip>
                                         </span>
                                 </v-expansion-panel-title>
 
@@ -550,6 +554,15 @@
                                         :label="$t('$vuetify.dataIterator.i.model')" :items="defaultChoiceStore.model"
                                         v-model="chatbotStore.model" variant="outlined">
                                     </v-combobox>
+
+                                    <!-- ---------------------------------------------- -->
+                                    <!-- Conversation ID -->
+                                    <!-- ---------------------------------------------- -->
+                                    <v-text-field density='compact' class="px-2"
+                                        :label="$t('$vuetify.dataIterator.i.conversationId')"
+                                        v-model="chatbotStore.conversation_id" variant="outlined"
+                                        :rules="[value => !!value || $t('$vuetify.dataIterator.validation.conversationIdRequired'), value => /^[a-zA-Z0-9\-_.@]+$/.test(value) || $t('$vuetify.dataIterator.validation.conversationIdInvalid')]">
+                                    </v-text-field>
                                 </v-expansion-panel-text>
                             </v-expansion-panel>
 
@@ -1669,6 +1682,11 @@
 
                 const { locale } = useI18n({ useScope: 'global' });
 
+                // Helper function to generate random conversation ID
+                const generateConversationId = () => {
+                    return 'conv_' + Math.random().toString(36).substring(2, 15);
+                };
+
                 const useLanguageStore = defineStore("languageStore", {
                     state: () => ({
                         list: [{ title: 'English', value: 'en', name: 'united-states' },
@@ -1712,6 +1730,8 @@
                                 snackbarStore.showWarningMessage('$vuetify.dataIterator.snackbar.addfail')
                             } else {
                                 this.conversation = [];
+                                // Generate random conversation_id for new conversation
+                                chatbotStore.conversation_id = generateConversationId();
                                 snackbarStore.showSuccessMessage('$vuetify.dataIterator.snackbar.addnew')
                             }
                         },
@@ -1974,6 +1994,7 @@
                         url: "",
                         path: "/v1/chat/completions",
                         model: "llama-model",
+                        conversation_id: generateConversationId(),
                         authPrefix: "Bearer",
                         contentType: "application/json",
                         max_tokens_type: "max_tokens",
@@ -2040,6 +2061,7 @@
                         const body = {
                             messages: agentStore.promptMessage(conversation),
                             model: chatbotStore.model,
+                            conversation_id: chatbotStore.conversation_id,
                             stream: chatbotStore.stream,
                         }
 
@@ -2483,6 +2505,7 @@
                             url: 'URL',
                             path: 'Path',
                             model: 'Model',
+                            conversationId: 'Conversation ID',
                             advanced: 'Advanced',
                             method: 'HTTP Method',
                             stream: 'Stream',
@@ -2493,6 +2516,10 @@
                             contentType: 'Content Type',
                             authPrefix: 'Auth Prefix',
                             configFile: 'Config File'
+                        },
+                        validation: {
+                            conversationIdRequired: 'Conversation ID is required',
+                            conversationIdInvalid: 'Only letters, numbers, -, _, ., @ allowed'
                         },
                         snackbar: {
                             addnew: 'Added new session.',
@@ -2520,6 +2547,7 @@
                             url: 'URL',
                             path: 'Path',
                             model: 'Modello',
+                            conversationId: 'ID Conversazione',
                             advanced: 'Configurazione Avanzata',
                             method: 'HTTP Metodo',
                             stream: 'Stream',
@@ -2529,6 +2557,10 @@
                             contentType: 'Tipo di Contenuto',
                             authPrefix: 'Auth Prefix',
                             configFile: 'File di Configurazione'
+                        },
+                        validation: {
+                            conversationIdRequired: 'ID Conversazione è richiesto',
+                            conversationIdInvalid: 'Solo lettere, numeri, -, _, ., @ consentiti'
                         },
                         snackbar: {
                             addnew: 'Aggiunta nuova sessione.',
@@ -2553,9 +2585,17 @@
                             title: 'インターフェイス構成',
                             apikey: 'API キー',
                             endpoint: '端点',
+                            url: 'URL',
+                            path: 'パス',
+                            model: 'モデル',
+                            conversationId: '会話 ID',
                             contentType: 'コンテンツタイプ',
                             authPrefix: 'リクエストヘッダー',
                             configFile: 'プロファイル'
+                        },
+                        validation: {
+                            conversationIdRequired: '会話 ID は必須です',
+                            conversationIdInvalid: '文字、数字、-, _, ., @ のみ使用可能'
                         },
                         snackbar: {
                             addnew: '新しいセッションが追加されました',
@@ -2583,8 +2623,13 @@
                             url: 'URL',
                             path: 'Sökväg',
                             model: 'Modell',
+                            conversationId: 'Konversations-ID',
                             stream: 'Strömma',
                             configFile: 'Konfigurationsfil'
+                        },
+                        validation: {
+                            conversationIdRequired: 'Konversations-ID krävs',
+                            conversationIdInvalid: 'Endast bokstäver, siffror, -, _, ., @ tillåtna'
                         },
                         snackbar: {
                             addnew: 'En ny session har lagts till.',
@@ -2622,6 +2667,7 @@
                             url: '网址',
                             path: '路径',
                             model: '模型',
+                            conversationId: '会话 ID',
                             advanced: '高级配置',
                             method: 'HTTP 请求方法',
                             stream: '流式输出',
@@ -2631,6 +2677,10 @@
                             contentType: '媒体类型',
                             authPrefix: '鉴权请求头',
                             configFile: '配置文件'
+                        },
+                        validation: {
+                            conversationIdRequired: '会话 ID 必填',
+                            conversationIdInvalid: '仅允许字母、数字、-、_、.、@ 字符'
                         },
                         snackbar: {
                             addnew: '已添加新会话',
