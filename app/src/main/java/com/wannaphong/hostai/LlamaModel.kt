@@ -175,14 +175,17 @@ class LlamaModel(private val contentResolver: ContentResolver) {
      */
     fun clearAllSessions() {
         LogManager.i(TAG, "Clearing all conversation sessions (${conversations.size} sessions)")
-        conversations.forEach { (sessionId, conversation) ->
+        // Use iterator to safely remove all entries while closing conversations
+        val iterator = conversations.entries.iterator()
+        while (iterator.hasNext()) {
+            val entry = iterator.next()
             try {
-                conversation.close()
+                entry.value.close()
             } catch (e: Exception) {
-                LogManager.e(TAG, "Error closing conversation for session $sessionId", e)
+                LogManager.e(TAG, "Error closing conversation for session ${entry.key}", e)
             }
+            iterator.remove()
         }
-        conversations.clear()
     }
     
     /**
@@ -214,7 +217,8 @@ class LlamaModel(private val contentResolver: ContentResolver) {
         
         // For mock model, return a simple response
         if (modelPath == "mock-model") {
-            return "This is a mock response from the model (session: $sessionId). In production, this would be the actual LLM output for prompt: \"$prompt\""
+            val promptPreview = if (prompt.length > 50) prompt.take(50) + "..." else prompt
+            return "This is a mock response from the model (session: $sessionId). In production, this would be the actual LLM output for prompt: \"$promptPreview\""
         }
         
         return try {

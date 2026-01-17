@@ -711,13 +711,21 @@ class OpenAIApiServer(
      * 3. user field (OpenAI standard)
      * 4. X-Session-ID header
      * 5. default session
+     * 
+     * Validates and sanitizes session IDs to prevent injection attacks.
      */
     private fun extractSessionId(ctx: JavalinContext, request: JsonObject): String {
-        return request.get("session_id")?.asString
+        val rawSessionId = request.get("session_id")?.asString
             ?: request.get("conversation_id")?.asString
             ?: request.get("user")?.asString
             ?: ctx.header("X-Session-ID")
             ?: "default"
+        
+        // Sanitize session ID: allow only alphanumeric, dash, underscore, dot, and @
+        // This prevents potential injection attacks and ensures safe usage
+        return rawSessionId.filter { it.isLetterOrDigit() || it in "-_.@" }
+            .take(128) // Limit length to prevent excessive memory usage
+            .ifEmpty { "default" } // Fall back to default if sanitized ID is empty
     }
     
     /**
