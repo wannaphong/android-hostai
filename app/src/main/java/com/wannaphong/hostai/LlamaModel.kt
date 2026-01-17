@@ -10,6 +10,7 @@ import com.google.ai.edge.litertlm.EngineConfig
 import com.google.ai.edge.litertlm.Message
 import com.google.ai.edge.litertlm.MessageCallback
 import com.google.ai.edge.litertlm.SamplerConfig
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -55,6 +56,8 @@ class LlamaModel(private val contentResolver: ContentResolver) {
         private const val TAG = "LlamaModel"
         private const val DEFAULT_MAX_TOKENS = 2048
         private const val DEFAULT_SESSION_ID = "default"
+        // Delay between streaming token emissions (in milliseconds)
+        private const val TOKEN_EMISSION_DELAY_MS = 10L
     }
     
     fun loadModel(modelPath: String): Boolean {
@@ -301,26 +304,67 @@ class LlamaModel(private val contentResolver: ContentResolver) {
                 // Use suspendCancellableCoroutine to wait for async callback to complete
                 suspendCancellableCoroutine<Unit> { continuation ->
                     val resumed = AtomicBoolean(false)
+                    // Use CompletableDeferred to signal when streaming job completes
+                    val streamingCompleted = CompletableDeferred<Unit>()
                     
                     // Use MessageCallback for streaming
                     val callback = object : MessageCallback {
                         override fun onMessage(message: Message) {
-                            // LiteRT's Message contains the generated token/text
-                            // Using toString() to extract the text content
-                            onToken(message.toString())
+                            // LiteRT's MessageCallback.onMessage is called once with the complete response
+                            // To provide proper streaming, we need to chunk the response and emit it progressively
+                            val fullText = message.toString()
+                            
+                            // Stream the response in chunks (word by word for better UX)
+                            // This simulates token-level streaming when the library provides complete responses
+                            scope.launch {
+                                try {
+                                    // Split by whitespace while preserving the spaces as separate tokens
+                                    // This provides natural word-by-word streaming
+                                    val parts = fullText.split(" ")
+                                    
+                                    for ((index, part) in parts.withIndex()) {
+                                        // Emit the word
+                                        if (part.isNotEmpty()) {
+                                            onToken(part)
+                                            delay(TOKEN_EMISSION_DELAY_MS)
+                                        }
+                                        // Emit the space after the word (except after the last word)
+                                        if (index < parts.size - 1) {
+                                            onToken(" ")
+                                            delay(TOKEN_EMISSION_DELAY_MS)
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    LogManager.e(TAG, "Error during chunked streaming", e)
+                                } finally {
+                                    // Signal that streaming is complete
+                                    streamingCompleted.complete(Unit)
+                                }
+                            }
                         }
                         
                         override fun onDone() {
                             LogManager.i(TAG, "Streaming completed for session '$sessionId'")
-                            // Resume the coroutine when streaming is done
-                            if (resumed.compareAndSet(false, true)) {
-                                continuation.resume(Unit)
+                            // Wait for streaming job to complete before resuming
+                            scope.launch {
+                                // Await the streaming job completion
+                                // Note: If onMessage was never called, we complete the deferred here
+                                if (!streamingCompleted.isCompleted) {
+                                    streamingCompleted.complete(Unit)
+                                }
+                                streamingCompleted.await()
+                                // Resume the coroutine when streaming is done
+                                if (resumed.compareAndSet(false, true)) {
+                                    continuation.resume(Unit)
+                                }
                             }
                         }
                         
                         override fun onError(throwable: Throwable) {
                             Log.e(TAG, "Streaming error for session '$sessionId'", throwable)
                             LogManager.e(TAG, "Streaming error: ${throwable.message}", throwable)
+                            // Complete the deferred to unblock any waiters
+                            streamingCompleted.complete(Unit)
                             // Resume with exception on error
                             if (resumed.compareAndSet(false, true)) {
                                 continuation.resumeWithException(throwable)
