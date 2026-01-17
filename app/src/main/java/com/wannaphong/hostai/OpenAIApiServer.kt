@@ -49,6 +49,12 @@ class OpenAIApiServer(
     // Storage for chat completions with store=true
     private val storedCompletions = ConcurrentHashMap<String, StoredCompletion>()
     
+    // Settings manager for feature toggles
+    private val settingsManager = SettingsManager(context)
+    
+    // Request logger (singleton)
+    private val requestLogger by lazy { RequestLogger.getInstance(context) }
+    
     companion object {
         private const val TAG = "OpenAIApiServer"
         // Maximum request body size (10 MB) to prevent memory exhaustion attacks
@@ -112,6 +118,36 @@ class OpenAIApiServer(
             LogManager.i(TAG, "Javalin server stopped")
         } catch (e: Exception) {
             LogManager.e(TAG, "Error stopping server", e)
+        }
+    }
+    
+    /**
+     * Check if an endpoint is enabled and return error if not
+     */
+    private fun checkEndpointEnabled(ctx: JavalinContext, endpointName: String, isEnabled: Boolean): Boolean {
+        if (!isEnabled) {
+            val errorResponse = mapOf(
+                "error" to mapOf("message" to "$endpointName endpoint is disabled in settings")
+            )
+            ctx.status(403).contentType("application/json").result(gson.toJson(errorResponse))
+            LogManager.w(TAG, "$endpointName endpoint accessed but is disabled")
+            return false
+        }
+        return true
+    }
+    
+    /**
+     * Log request if logging is enabled
+     */
+    private fun logRequestIfEnabled(
+        ctx: JavalinContext,
+        endpoint: String,
+        requestBody: String,
+        responseBody: String
+    ) {
+        if (settingsManager.isLoggingEnabled()) {
+            val ipAddress = ctx.ip()
+            requestLogger.logRequest(ipAddress, endpoint, requestBody, responseBody)
         }
     }
     
@@ -258,6 +294,11 @@ class OpenAIApiServer(
     private fun handleChatUI(ctx: JavalinContext) {
         LogManager.d(TAG, "Handling /chat")
         
+        // Check if web chat UI is enabled
+        if (!checkEndpointEnabled(ctx, "Web Chat UI", settingsManager.isWebChatEnabled())) {
+            return
+        }
+        
         try {
             val inputStream = context.assets.open("index.html")
             val html = inputStream.bufferedReader().use { it.readText() }
@@ -306,6 +347,11 @@ class OpenAIApiServer(
     private fun handleChatCompletions(ctx: JavalinContext) {
         LogManager.d(TAG, "Handling /v1/chat/completions")
         
+        // Check if chat completions endpoint is enabled
+        if (!checkEndpointEnabled(ctx, "Chat Completions", settingsManager.isChatCompletionsEnabled())) {
+            return
+        }
+        
         try {
             val bodyText = ctx.body()
             
@@ -346,9 +392,9 @@ class OpenAIApiServer(
             LogManager.d(TAG, "Chat completion - stream: $stream, maxTokens: ${config.maxTokens}, temp: ${config.temperature}")
             
             if (stream) {
-                handleChatStreamingResponse(ctx, prompt, config, sessionId, messages, store, metadata)
+                handleChatStreamingResponse(ctx, prompt, config, sessionId, messages, store, metadata, bodyText)
             } else {
-                handleChatNonStreamingResponse(ctx, prompt, config, sessionId, messages, store, metadata)
+                handleChatNonStreamingResponse(ctx, prompt, config, sessionId, messages, store, metadata, bodyText)
             }
         } catch (e: Exception) {
             LogManager.e(TAG, "Error handling chat completions", e)
@@ -366,7 +412,8 @@ class OpenAIApiServer(
         sessionId: String,
         messages: com.google.gson.JsonArray,
         store: Boolean,
-        metadata: Map<String, Any>?
+        metadata: Map<String, Any>?,
+        bodyText: String
     ) {
         // Generate response with session ID
         val completion = model.generate(prompt, config, sessionId)
@@ -425,7 +472,12 @@ class OpenAIApiServer(
         
         LogManager.i(TAG, "Chat completion completed successfully for session: $sessionId")
         
-        ctx.contentType("application/json").result(gson.toJson(response))
+        val responseJson = gson.toJson(response)
+        
+        // Log request if logging is enabled
+        logRequestIfEnabled(ctx, "/v1/chat/completions", bodyText, responseJson)
+        
+        ctx.contentType("application/json").result(responseJson)
     }
     
     private fun handleChatStreamingResponse(
@@ -435,7 +487,8 @@ class OpenAIApiServer(
         sessionId: String,
         messages: com.google.gson.JsonArray,
         store: Boolean,
-        metadata: Map<String, Any>?
+        metadata: Map<String, Any>?,
+        bodyText: String
     ) {
         LogManager.i(TAG, "Starting chat streaming response for session: $sessionId")
         
@@ -559,6 +612,11 @@ class OpenAIApiServer(
     private fun handleCompletions(ctx: JavalinContext) {
         LogManager.d(TAG, "Handling /v1/completions")
         
+        // Check if text completions endpoint is enabled
+        if (!checkEndpointEnabled(ctx, "Text Completions", settingsManager.isTextCompletionsEnabled())) {
+            return
+        }
+        
         try {
             val bodyText = ctx.body()
             
@@ -587,9 +645,9 @@ class OpenAIApiServer(
             val config = extractGenerationConfig(request)
             
             if (stream) {
-                handleCompletionStreamingResponse(ctx, prompt, config, sessionId)
+                handleCompletionStreamingResponse(ctx, prompt, config, sessionId, bodyText)
             } else {
-                handleCompletionNonStreamingResponse(ctx, prompt, config, sessionId)
+                handleCompletionNonStreamingResponse(ctx, prompt, config, sessionId, bodyText)
             }
         } catch (e: Exception) {
             LogManager.e(TAG, "Error handling completions", e)
@@ -604,7 +662,8 @@ class OpenAIApiServer(
         ctx: JavalinContext,
         prompt: String,
         config: GenerationConfig,
-        sessionId: String
+        sessionId: String,
+        bodyText: String
     ) {
         // Generate response with session ID
         val completion = model.generate(prompt, config, sessionId)
@@ -631,14 +690,20 @@ class OpenAIApiServer(
             )
         )
         
-        ctx.contentType("application/json").result(gson.toJson(response))
+        val responseJson = gson.toJson(response)
+        
+        // Log request if logging is enabled
+        logRequestIfEnabled(ctx, "/v1/completions", bodyText, responseJson)
+        
+        ctx.contentType("application/json").result(responseJson)
     }
     
     private fun handleCompletionStreamingResponse(
         ctx: JavalinContext,
         prompt: String,
         config: GenerationConfig,
-        sessionId: String
+        sessionId: String,
+        bodyText: String
     ) {
         LogManager.i(TAG, "Starting completion streaming response for session: $sessionId")
         
