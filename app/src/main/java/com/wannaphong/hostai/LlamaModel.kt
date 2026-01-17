@@ -122,39 +122,38 @@ class LlamaModel(private val contentResolver: ContentResolver) {
     
     /**
      * Get or create a conversation for the given session ID.
+     * Thread-safe atomic operation.
      * @param sessionId Unique identifier for the conversation session
      * @param config Sampler configuration for the conversation
      * @return The conversation instance
      */
     private fun getOrCreateConversation(sessionId: String, config: GenerationConfig): Conversation? {
-        // Check if conversation already exists
-        conversations[sessionId]?.let { return it }
-        
-        // Create new conversation with proper error handling
-        return try {
-            val currentEngine = engine ?: throw IllegalStateException("Engine is not initialized")
-            
-            val samplerConfig = SamplerConfig(
-                topK = config.topK,
-                topP = config.topP,
-                temperature = config.temperature
-            )
-            val newConversation = currentEngine.createConversation(
-                ConversationConfig(samplerConfig = samplerConfig)
-            )
-            
-            // Only store if creation was successful
-            if (newConversation != null) {
-                conversations[sessionId] = newConversation
-                LogManager.i(TAG, "Created new conversation for session: $sessionId")
-                newConversation
-            } else {
-                LogManager.e(TAG, "Failed to create conversation: createConversation returned null")
-                null
+        return conversations.computeIfAbsent(sessionId) { _ ->
+            try {
+                val currentEngine = engine ?: throw IllegalStateException("Engine is not initialized")
+                
+                val samplerConfig = SamplerConfig(
+                    topK = config.topK,
+                    topP = config.topP,
+                    temperature = config.temperature
+                )
+                val newConversation = currentEngine.createConversation(
+                    ConversationConfig(samplerConfig = samplerConfig)
+                )
+                
+                if (newConversation != null) {
+                    LogManager.i(TAG, "Created new conversation for session: $sessionId")
+                    newConversation
+                } else {
+                    LogManager.e(TAG, "Failed to create conversation: createConversation returned null")
+                    throw IllegalStateException("Failed to create conversation")
+                }
+            } catch (e: Exception) {
+                LogManager.e(TAG, "Failed to create conversation for session $sessionId", e)
+                // Remove the failed entry to allow retry
+                conversations.remove(sessionId)
+                throw e
             }
-        } catch (e: Exception) {
-            LogManager.e(TAG, "Failed to create conversation for session $sessionId", e)
-            null
         }
     }
     
@@ -228,9 +227,15 @@ class LlamaModel(private val contentResolver: ContentResolver) {
             // Get or create conversation for this session
             val sessionConversation = getOrCreateConversation(sessionId, config)
             
+            if (sessionConversation == null) {
+                val errorMsg = "Error: Failed to create conversation for session '$sessionId'"
+                LogManager.e(TAG, errorMsg)
+                return errorMsg
+            }
+            
             // Send message and get response synchronously
             val userMessage = Message.of(prompt)
-            val response = sessionConversation?.sendMessage(userMessage)
+            val response = sessionConversation.sendMessage(userMessage)
             
             val result = response?.toString() ?: ""
             LogManager.i(TAG, "Generation completed successfully for session '$sessionId' (length: ${result.length})")
@@ -289,17 +294,15 @@ class LlamaModel(private val contentResolver: ContentResolver) {
                 // Get or create conversation for this session
                 val sessionConversation = getOrCreateConversation(sessionId, config)
                 
+                if (sessionConversation == null) {
+                    LogManager.e(TAG, "Failed to create conversation for session '$sessionId'")
+                    onToken("Error: Failed to create conversation for session '$sessionId'")
+                    return@launch
+                }
+                
                 // Use suspendCancellableCoroutine to wait for async callback to complete
                 suspendCancellableCoroutine<Unit> { continuation ->
                     val resumed = AtomicBoolean(false)
-                    
-                    // Check if conversation is available
-                    if (sessionConversation == null) {
-                        val error = IllegalStateException("Conversation is not initialized for session '$sessionId'")
-                        LogManager.e(TAG, "Cannot send message: conversation is null for session '$sessionId'")
-                        continuation.resumeWithException(error)
-                        return@suspendCancellableCoroutine
-                    }
                     
                     // Use MessageCallback for streaming
                     val callback = object : MessageCallback {
