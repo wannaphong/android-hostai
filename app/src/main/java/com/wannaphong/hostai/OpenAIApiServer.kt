@@ -414,24 +414,30 @@ class OpenAIApiServer(
             }
             
             // Send final chunk with finish_reason
-            val finalChunk = mapOf(
-                "id" to id,
-                "object" to "chat.completion.chunk",
-                "created" to created,
-                "model" to model.getModelName(),
-                "choices" to listOf(
-                    mapOf(
-                        "index" to 0,
-                        "delta" to mapOf<String, String>(),
-                        "finish_reason" to "stop"
+            try {
+                val finalChunk = mapOf(
+                    "id" to id,
+                    "object" to "chat.completion.chunk",
+                    "created" to created,
+                    "model" to model.getModelName(),
+                    "choices" to listOf(
+                        mapOf(
+                            "index" to 0,
+                            "delta" to mapOf<String, String>(),
+                            "finish_reason" to "stop"
+                        )
                     )
                 )
-            )
-            val finalData = "data: ${gson.toJson(finalChunk)}\n\ndata: [DONE]\n\n"
-            outputStream.write(finalData.toByteArray(Charsets.UTF_8))
-            outputStream.flush()
-            
-            LogManager.i(TAG, "Chat streaming completed with $tokenCount tokens")
+                val finalData = "data: ${gson.toJson(finalChunk)}\n\ndata: [DONE]\n\n"
+                outputStream.write(finalData.toByteArray(Charsets.UTF_8))
+                outputStream.flush()
+                
+                LogManager.i(TAG, "Chat streaming completed with $tokenCount tokens")
+            } catch (e: IllegalStateException) {
+                // Handle Jetty output stream state errors gracefully
+                // This can happen if the client disconnected or the stream is already closed
+                LogManager.d(TAG, "Output stream no longer writable (client may have disconnected): ${e.message}")
+            }
         } catch (e: Exception) {
             LogManager.e(TAG, "Error in chat streaming", e)
         }
@@ -601,24 +607,30 @@ class OpenAIApiServer(
             }
             
             // Send final chunk with finish_reason
-            val finalChunk = mapOf(
-                "id" to id,
-                "object" to "text_completion",
-                "created" to created,
-                "model" to model.getModelName(),
-                "choices" to listOf(
-                    mapOf(
-                        "text" to "",
-                        "index" to 0,
-                        "finish_reason" to "stop"
+            try {
+                val finalChunk = mapOf(
+                    "id" to id,
+                    "object" to "text_completion",
+                    "created" to created,
+                    "model" to model.getModelName(),
+                    "choices" to listOf(
+                        mapOf(
+                            "text" to "",
+                            "index" to 0,
+                            "finish_reason" to "stop"
+                        )
                     )
                 )
-            )
-            val finalData = "data: ${gson.toJson(finalChunk)}\n\ndata: [DONE]\n\n"
-            outputStream.write(finalData.toByteArray(Charsets.UTF_8))
-            outputStream.flush()
-            
-            LogManager.i(TAG, "Completion streaming completed with $tokenCount tokens")
+                val finalData = "data: ${gson.toJson(finalChunk)}\n\ndata: [DONE]\n\n"
+                outputStream.write(finalData.toByteArray(Charsets.UTF_8))
+                outputStream.flush()
+                
+                LogManager.i(TAG, "Completion streaming completed with $tokenCount tokens")
+            } catch (e: IllegalStateException) {
+                // Handle Jetty output stream state errors gracefully
+                // This can happen if the client disconnected or the stream is already closed
+                LogManager.d(TAG, "Output stream no longer writable (client may have disconnected): ${e.message}")
+            }
         } catch (e: Exception) {
             LogManager.e(TAG, "Error in completion streaming", e)
         }
