@@ -56,6 +56,11 @@ class OpenAIApiServer(
                 post("/v1/chat/completions") { ctx -> handleChatCompletions(ctx) }
                 post("/v1/completions") { ctx -> handleCompletions(ctx) }
                 
+                // Session management endpoints
+                get("/v1/sessions") { ctx -> handleListSessions(ctx) }
+                delete("/v1/sessions/{sessionId}") { ctx -> handleDeleteSession(ctx) }
+                delete("/v1/sessions") { ctx -> handleClearAllSessions(ctx) }
+                
                 // UI endpoints
                 get("/") { ctx -> handleRoot(ctx) }
                 get("/chat") { ctx -> handleChatUI(ctx) }
@@ -143,11 +148,25 @@ class OpenAIApiServer(
                 </div>
                 <div class="endpoint">
                     <strong>POST /v1/chat/completions</strong><br>
-                    Chat completion endpoint (OpenAI compatible)
+                    Chat completion endpoint (OpenAI compatible)<br>
+                    <em>Supports multi-session via: conversation_id, user, session_id fields or X-Session-ID header</em>
                 </div>
                 <div class="endpoint">
                     <strong>POST /v1/completions</strong><br>
-                    Text completion endpoint (OpenAI compatible)
+                    Text completion endpoint (OpenAI compatible)<br>
+                    <em>Supports multi-session via: conversation_id, user, session_id fields or X-Session-ID header</em>
+                </div>
+                <div class="endpoint">
+                    <strong>GET /v1/sessions</strong><br>
+                    List active conversation sessions
+                </div>
+                <div class="endpoint">
+                    <strong>DELETE /v1/sessions/{sessionId}</strong><br>
+                    Clear a specific conversation session
+                </div>
+                <div class="endpoint">
+                    <strong>DELETE /v1/sessions</strong><br>
+                    Clear all conversation sessions
                 </div>
                 <div class="endpoint">
                     <strong>GET /health</strong><br>
@@ -235,6 +254,11 @@ class OpenAIApiServer(
             val messages = request.getAsJsonArray("messages")
             val stream = request.get("stream")?.asBoolean ?: false
             
+            // Extract session ID using helper method
+            val sessionId = extractSessionId(ctx, request)
+            
+            LogManager.d(TAG, "Using session ID: $sessionId")
+            
             // Build generation config from request parameters
             val config = extractGenerationConfig(request)
             
@@ -247,9 +271,9 @@ class OpenAIApiServer(
             LogManager.d(TAG, "Chat completion - stream: $stream, maxTokens: ${config.maxTokens}, temp: ${config.temperature}")
             
             if (stream) {
-                handleChatStreamingResponse(ctx, prompt, config)
+                handleChatStreamingResponse(ctx, prompt, config, sessionId)
             } else {
-                handleChatNonStreamingResponse(ctx, prompt, config)
+                handleChatNonStreamingResponse(ctx, prompt, config, sessionId)
             }
         } catch (e: Exception) {
             LogManager.e(TAG, "Error handling chat completions", e)
@@ -262,10 +286,11 @@ class OpenAIApiServer(
     private fun handleChatNonStreamingResponse(
         ctx: JavalinContext,
         prompt: String,
-        config: GenerationConfig
+        config: GenerationConfig,
+        sessionId: String
     ) {
-        // Generate response
-        val completion = model.generate(prompt, config)
+        // Generate response with session ID
+        val completion = model.generate(prompt, config, sessionId)
         
         val promptTokens = prompt.split(" ").size
         val completionTokens = completion.split(" ").size
@@ -292,7 +317,7 @@ class OpenAIApiServer(
             )
         )
         
-        LogManager.i(TAG, "Chat completion completed successfully")
+        LogManager.i(TAG, "Chat completion completed successfully for session: $sessionId")
         
         ctx.json(response)
     }
@@ -300,9 +325,10 @@ class OpenAIApiServer(
     private fun handleChatStreamingResponse(
         ctx: JavalinContext,
         prompt: String,
-        config: GenerationConfig
+        config: GenerationConfig,
+        sessionId: String
     ) {
-        LogManager.i(TAG, "Starting chat streaming response")
+        LogManager.i(TAG, "Starting chat streaming response for session: $sessionId")
         
         val id = "chatcmpl-${System.currentTimeMillis()}"
         val created = System.currentTimeMillis() / 1000
@@ -318,7 +344,7 @@ class OpenAIApiServer(
         try {
             var tokenCount = 0
             
-            val job = model.generateStream(prompt, config) { token ->
+            val job = model.generateStream(prompt, config, sessionId) { token ->
                 try {
                     tokenCount++
                     
@@ -430,13 +456,18 @@ class OpenAIApiServer(
             val prompt = request.get("prompt")?.asString ?: ""
             val stream = request.get("stream")?.asBoolean ?: false
             
+            // Extract session ID using helper method
+            val sessionId = extractSessionId(ctx, request)
+            
+            LogManager.d(TAG, "Text completion - Using session ID: $sessionId")
+            
             // Build generation config from request parameters
             val config = extractGenerationConfig(request)
             
             if (stream) {
-                handleCompletionStreamingResponse(ctx, prompt, config)
+                handleCompletionStreamingResponse(ctx, prompt, config, sessionId)
             } else {
-                handleCompletionNonStreamingResponse(ctx, prompt, config)
+                handleCompletionNonStreamingResponse(ctx, prompt, config, sessionId)
             }
         } catch (e: Exception) {
             LogManager.e(TAG, "Error handling completions", e)
@@ -449,10 +480,11 @@ class OpenAIApiServer(
     private fun handleCompletionNonStreamingResponse(
         ctx: JavalinContext,
         prompt: String,
-        config: GenerationConfig
+        config: GenerationConfig,
+        sessionId: String
     ) {
-        // Generate response
-        val completion = model.generate(prompt, config)
+        // Generate response with session ID
+        val completion = model.generate(prompt, config, sessionId)
         
         val promptTokens = prompt.split(" ").size
         val completionTokens = completion.split(" ").size
@@ -482,9 +514,10 @@ class OpenAIApiServer(
     private fun handleCompletionStreamingResponse(
         ctx: JavalinContext,
         prompt: String,
-        config: GenerationConfig
+        config: GenerationConfig,
+        sessionId: String
     ) {
-        LogManager.i(TAG, "Starting completion streaming response")
+        LogManager.i(TAG, "Starting completion streaming response for session: $sessionId")
         
         val id = "cmpl-${System.currentTimeMillis()}"
         val created = System.currentTimeMillis() / 1000
@@ -500,7 +533,7 @@ class OpenAIApiServer(
         try {
             var tokenCount = 0
             
-            val job = model.generateStream(prompt, config) { token ->
+            val job = model.generateStream(prompt, config, sessionId) { token ->
                 try {
                     tokenCount++
                     
@@ -596,6 +629,103 @@ class OpenAIApiServer(
             promptBuilder.append("$role: $content\n")
         }
         return promptBuilder.toString()
+    }
+    
+    private fun handleListSessions(ctx: JavalinContext) {
+        LogManager.d(TAG, "Handling GET /v1/sessions")
+        
+        try {
+            val activeSessions = model.getActiveSessions()
+            val sessionCount = model.getActiveSessionCount()
+            
+            val response = mapOf(
+                "object" to "list",
+                "data" to activeSessions.map { sessionId ->
+                    mapOf(
+                        "id" to sessionId,
+                        "object" to "session"
+                    )
+                },
+                "count" to sessionCount
+            )
+            
+            ctx.json(response)
+        } catch (e: Exception) {
+            LogManager.e(TAG, "Error listing sessions", e)
+            ctx.status(500).json(mapOf(
+                "error" to mapOf("message" to (e.message ?: "Failed to list sessions"))
+            ))
+        }
+    }
+    
+    private fun handleDeleteSession(ctx: JavalinContext) {
+        val sessionId = ctx.pathParam("sessionId")
+        LogManager.d(TAG, "Handling DELETE /v1/sessions/$sessionId")
+        
+        try {
+            val cleared = model.clearSession(sessionId)
+            
+            if (cleared) {
+                ctx.json(mapOf(
+                    "deleted" to true,
+                    "id" to sessionId,
+                    "object" to "session"
+                ))
+            } else {
+                ctx.status(404).json(mapOf(
+                    "error" to mapOf("message" to "Session not found: $sessionId")
+                ))
+            }
+        } catch (e: Exception) {
+            LogManager.e(TAG, "Error deleting session $sessionId", e)
+            ctx.status(500).json(mapOf(
+                "error" to mapOf("message" to (e.message ?: "Failed to delete session"))
+            ))
+        }
+    }
+    
+    private fun handleClearAllSessions(ctx: JavalinContext) {
+        LogManager.d(TAG, "Handling DELETE /v1/sessions (clear all)")
+        
+        try {
+            val countBefore = model.getActiveSessionCount()
+            model.clearAllSessions()
+            
+            ctx.json(mapOf(
+                "deleted" to true,
+                "count" to countBefore,
+                "object" to "sessions"
+            ))
+        } catch (e: Exception) {
+            LogManager.e(TAG, "Error clearing all sessions", e)
+            ctx.status(500).json(mapOf(
+                "error" to mapOf("message" to (e.message ?: "Failed to clear sessions"))
+            ))
+        }
+    }
+    
+    /**
+     * Extract session ID from request using multiple methods in priority order:
+     * 1. conversation_id field (OpenAI Conversations API standard)
+     * 2. user field (OpenAI standard)
+     * 3. session_id field
+     * 4. X-Session-ID header
+     * 5. default session
+     * 
+     * Validates and sanitizes session IDs to prevent injection attacks.
+     */
+    private fun extractSessionId(ctx: JavalinContext, request: JsonObject): String {
+        val rawSessionId = request.get("conversation_id")?.asString
+            ?: request.get("user")?.asString
+            ?: request.get("session_id")?.asString
+            ?: ctx.header("X-Session-ID")
+            ?: "default"
+        
+        // Sanitize session ID: allow only alphanumeric, dash, underscore, dot, and @
+        // This prevents potential injection attacks and ensures safe usage
+        return rawSessionId.filter { it.isLetterOrDigit() || it in "-_.@" }
+            .take(128) // Limit length to prevent excessive memory usage
+            .ifEmpty { "default" } // Fall back to default if sanitized ID is empty
     }
     
     /**

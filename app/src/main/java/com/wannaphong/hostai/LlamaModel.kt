@@ -19,6 +19,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -47,12 +48,13 @@ class LlamaModel(private val contentResolver: ContentResolver) {
     
     // LiteRT components
     private var engine: Engine? = null
-    private var conversation: Conversation? = null
+    private val conversations = ConcurrentHashMap<String, Conversation>()
     private val scope = CoroutineScope(Dispatchers.IO)
     
     companion object {
         private const val TAG = "LlamaModel"
         private const val DEFAULT_MAX_TOKENS = 2048
+        private const val DEFAULT_SESSION_ID = "default"
     }
     
     fun loadModel(modelPath: String): Boolean {
@@ -118,48 +120,126 @@ class LlamaModel(private val contentResolver: ContentResolver) {
     fun getModelPath(): String? = modelPath
     
     /**
-     * Generate text with full configuration support.
+     * Get or create a conversation for the given session ID.
+     * Thread-safe atomic operation using computeIfAbsent.
+     * @param sessionId Unique identifier for the conversation session
+     * @param config Sampler configuration for the conversation
+     * @return The conversation instance, or null if creation fails
+     */
+    private fun getOrCreateConversation(sessionId: String, config: GenerationConfig): Conversation? {
+        return try {
+            conversations.computeIfAbsent(sessionId) { _ ->
+                val currentEngine = engine ?: throw IllegalStateException("Engine is not initialized")
+                
+                val samplerConfig = SamplerConfig(
+                    topK = config.topK,
+                    topP = config.topP,
+                    temperature = config.temperature
+                )
+                val newConversation = currentEngine.createConversation(
+                    ConversationConfig(samplerConfig = samplerConfig)
+                ) ?: throw IllegalStateException("createConversation returned null")
+                
+                LogManager.i(TAG, "Created new conversation for session: $sessionId")
+                newConversation
+            }
+        } catch (e: Exception) {
+            LogManager.e(TAG, "Failed to create conversation for session $sessionId", e)
+            // Note: computeIfAbsent won't insert the key if the function throws an exception
+            // So we don't need to remove anything - the map remains unchanged
+            null
+        }
+    }
+    
+    /**
+     * Clear a specific conversation session.
+     * @param sessionId The session ID to clear
+     * @return true if the session was found and cleared, false otherwise
+     */
+    fun clearSession(sessionId: String): Boolean {
+        val conversation = conversations.remove(sessionId)
+        if (conversation != null) {
+            LogManager.i(TAG, "Clearing conversation session: $sessionId")
+            try {
+                conversation.close()
+            } catch (e: Exception) {
+                LogManager.e(TAG, "Error closing conversation for session $sessionId", e)
+            }
+            return true
+        }
+        return false
+    }
+    
+    /**
+     * Clear all conversation sessions.
+     */
+    fun clearAllSessions() {
+        LogManager.i(TAG, "Clearing all conversation sessions (${conversations.size} sessions)")
+        // Use iterator to safely remove all entries while closing conversations
+        val iterator = conversations.entries.iterator()
+        while (iterator.hasNext()) {
+            val entry = iterator.next()
+            try {
+                entry.value.close()
+            } catch (e: Exception) {
+                LogManager.e(TAG, "Error closing conversation for session ${entry.key}", e)
+            }
+            iterator.remove()
+        }
+    }
+    
+    /**
+     * Get the number of active conversation sessions.
+     */
+    fun getActiveSessionCount(): Int = conversations.size
+    
+    /**
+     * Get list of active session IDs.
+     */
+    fun getActiveSessions(): List<String> = conversations.keys.toList()
+    
+    /**
+     * Generate text with full configuration support and session management.
      * @param prompt The input prompt text
      * @param config Generation configuration with all parameters (optional)
+     * @param sessionId Session identifier for conversation context (optional)
      * @return Generated text
      */
-    fun generate(prompt: String, config: GenerationConfig = GenerationConfig()): String {
+    fun generate(prompt: String, config: GenerationConfig = GenerationConfig(), sessionId: String = DEFAULT_SESSION_ID): String {
         if (!isModelLoaded()) {
             val errorMsg = "Error: Model not loaded. Please load a model first."
             LogManager.e(TAG, errorMsg)
             return errorMsg
         }
         
-        LogManager.i(TAG, "Generating response for prompt (length: ${prompt.length})")
+        LogManager.i(TAG, "Generating response for session '$sessionId' with prompt (length: ${prompt.length})")
         LogManager.d(TAG, "Config: maxTokens=${config.maxTokens}, temp=${config.temperature}, topK=${config.topK}, topP=${config.topP}")
         
         // For mock model, return a simple response
         if (modelPath == "mock-model") {
-            return "This is a mock response from the model. In production, this would be the actual LLM output for prompt: \"$prompt\""
+            val promptPreview = if (prompt.length > 50) prompt.take(50) + "..." else prompt
+            return "This is a mock response from the model (session: $sessionId). In production, this would be the actual LLM output for prompt: \"$promptPreview\""
         }
         
         return try {
-            // Create or reuse conversation
-            if (conversation == null) {
-                val samplerConfig = SamplerConfig(
-                    topK = config.topK,
-                    topP = config.topP,
-                    temperature = config.temperature
-                )
-                conversation = engine?.createConversation(
-                    ConversationConfig(samplerConfig = samplerConfig)
-                )
+            // Get or create conversation for this session
+            val sessionConversation = getOrCreateConversation(sessionId, config)
+            
+            if (sessionConversation == null) {
+                val errorMsg = "Error: Failed to create conversation for session '$sessionId'"
+                LogManager.e(TAG, errorMsg)
+                return errorMsg
             }
             
             // Send message and get response synchronously
             val userMessage = Message.of(prompt)
-            val response = conversation?.sendMessage(userMessage)
+            val response = sessionConversation.sendMessage(userMessage)
             
             val result = response?.toString() ?: ""
-            LogManager.i(TAG, "Generation completed successfully (length: ${result.length})")
+            LogManager.i(TAG, "Generation completed successfully for session '$sessionId' (length: ${result.length})")
             result
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to generate response", e)
+            Log.e(TAG, "Failed to generate response for session '$sessionId'", e)
             LogManager.e(TAG, "Failed to generate response: ${e.message}", e)
             "Error: ${e.message}"
         }
@@ -175,15 +255,17 @@ class LlamaModel(private val contentResolver: ContentResolver) {
     }
     
     /**
-     * Generate text with streaming and full configuration support.
+     * Generate text with streaming and full configuration support with session management.
      * @param prompt The input prompt text
      * @param config Generation configuration with all parameters (optional)
+     * @param sessionId Session identifier for conversation context (optional)
      * @param onToken Callback for each generated token
      * @return Job that can be cancelled, or null on error
      */
     fun generateStream(
         prompt: String,
         config: GenerationConfig = GenerationConfig(),
+        sessionId: String = DEFAULT_SESSION_ID,
         onToken: (String) -> Unit
     ): Job? {
         if (!isModelLoaded()) {
@@ -191,12 +273,12 @@ class LlamaModel(private val contentResolver: ContentResolver) {
             return null
         }
         
-        LogManager.d(TAG, "Streaming config: maxTokens=${config.maxTokens}, temp=${config.temperature}, topK=${config.topK}, topP=${config.topP}")
+        LogManager.d(TAG, "Streaming for session '$sessionId' - config: maxTokens=${config.maxTokens}, temp=${config.temperature}, topK=${config.topK}, topP=${config.topP}")
         
         // For mock model, simulate streaming
         if (modelPath == "mock-model") {
             return scope.launch {
-                val mockResponse = "This is a mock streaming response from the model. "
+                val mockResponse = "This is a mock streaming response from the model for session $sessionId. "
                 val words = mockResponse.split(" ")
                 for (word in words) {
                     onToken("$word ")
@@ -207,30 +289,18 @@ class LlamaModel(private val contentResolver: ContentResolver) {
         
         return scope.launch {
             try {
-                // Create or reuse conversation
-                if (conversation == null) {
-                    val samplerConfig = SamplerConfig(
-                        topK = config.topK,
-                        topP = config.topP,
-                        temperature = config.temperature
-                    )
-                    conversation = engine?.createConversation(
-                        ConversationConfig(samplerConfig = samplerConfig)
-                    )
+                // Get or create conversation for this session
+                val sessionConversation = getOrCreateConversation(sessionId, config)
+                
+                if (sessionConversation == null) {
+                    LogManager.e(TAG, "Failed to create conversation for session '$sessionId'")
+                    onToken("Error: Failed to create conversation for session '$sessionId'")
+                    return@launch
                 }
                 
                 // Use suspendCancellableCoroutine to wait for async callback to complete
                 suspendCancellableCoroutine<Unit> { continuation ->
                     val resumed = AtomicBoolean(false)
-                    
-                    // Check if conversation is available and capture in local variable
-                    val currentConversation = conversation
-                    if (currentConversation == null) {
-                        val error = IllegalStateException("Conversation is not initialized")
-                        LogManager.e(TAG, "Cannot send message: conversation is null")
-                        continuation.resumeWithException(error)
-                        return@suspendCancellableCoroutine
-                    }
                     
                     // Use MessageCallback for streaming
                     val callback = object : MessageCallback {
@@ -241,7 +311,7 @@ class LlamaModel(private val contentResolver: ContentResolver) {
                         }
                         
                         override fun onDone() {
-                            LogManager.i(TAG, "Streaming completed")
+                            LogManager.i(TAG, "Streaming completed for session '$sessionId'")
                             // Resume the coroutine when streaming is done
                             if (resumed.compareAndSet(false, true)) {
                                 continuation.resume(Unit)
@@ -249,7 +319,7 @@ class LlamaModel(private val contentResolver: ContentResolver) {
                         }
                         
                         override fun onError(throwable: Throwable) {
-                            Log.e(TAG, "Streaming error", throwable)
+                            Log.e(TAG, "Streaming error for session '$sessionId'", throwable)
                             LogManager.e(TAG, "Streaming error: ${throwable.message}", throwable)
                             // Resume with exception on error
                             if (resumed.compareAndSet(false, true)) {
@@ -259,10 +329,10 @@ class LlamaModel(private val contentResolver: ContentResolver) {
                     }
                     
                     val userMessage = Message.of(prompt)
-                    currentConversation.sendMessageAsync(userMessage, callback)
+                    sessionConversation.sendMessageAsync(userMessage, callback)
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Streaming failed", e)
+                Log.e(TAG, "Streaming failed for session '$sessionId'", e)
                 LogManager.e(TAG, "Streaming failed: ${e.message}", e)
                 onToken("Error: ${e.message}")
             }
@@ -284,12 +354,12 @@ class LlamaModel(private val contentResolver: ContentResolver) {
     }
     
     /**
-     * Cleanup resources by closing conversation and optionally engine.
+     * Cleanup resources by closing conversations and optionally engine.
      */
     private fun cleanup(closeEngine: Boolean = false) {
         try {
-            conversation?.close()
-            conversation = null
+            // Clean up all session conversations
+            clearAllSessions()
             
             if (closeEngine) {
                 engine?.close()

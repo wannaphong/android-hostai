@@ -5,6 +5,7 @@ An Android application that uses [LiteRT-LM](https://github.com/google-ai-edge/L
 ## Features
 
 - 🚀 OpenAI-compatible API endpoints
+- 💬 Multi-session conversation support - maintain separate conversation contexts for multiple users
 - 📱 Native Android app with Material Design UI
 - 🔄 Foreground service for reliable server operation
 - 🌐 Local network access via WiFi
@@ -16,8 +17,11 @@ An Android application that uses [LiteRT-LM](https://github.com/google-ai-edge/L
 The server implements the following OpenAI-compatible endpoints:
 
 - `GET /v1/models` - List available models
-- `POST /v1/chat/completions` - Chat completions (ChatGPT-style)
-- `POST /v1/completions` - Text completions
+- `POST /v1/chat/completions` - Chat completions (ChatGPT-style) with multi-session support
+- `POST /v1/completions` - Text completions with multi-session support
+- `GET /v1/sessions` - List active conversation sessions
+- `DELETE /v1/sessions/{sessionId}` - Clear a specific conversation session
+- `DELETE /v1/sessions` - Clear all conversation sessions
 - `GET /health` - Health check endpoint
 - `GET /` - Web interface with API documentation
 - `GET /chat` - Web-based chat UI (powered by [AI-QL/chat-ui](https://github.com/AI-QL/chat-ui))
@@ -86,6 +90,32 @@ You'll need a LiteRT model file to use this app. You can:
   - [Qwen2.5-1.5B](https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct) (1.5 GB, 8-bit quantized)
 
 LiteRT models (.litertlm) are optimized for mobile devices with GPU acceleration support.
+
+### Multi-Session Support
+
+HostAI supports multiple concurrent conversation sessions, allowing you to maintain separate conversation contexts. This is useful for:
+- Supporting multiple users or clients simultaneously
+- Maintaining different conversation threads
+- Isolating different tasks or contexts
+
+Specify a session using:
+- `conversation_id` field in the request body (OpenAI Conversations API standard)
+- `user` field (OpenAI standard)
+- `session_id` field in the request body
+- `X-Session-ID` HTTP header
+
+Example with session:
+```bash
+curl http://<phone-ip>:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "llama-model",
+    "conversation_id": "alice",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+```
+
+See [API_USAGE.md](API_USAGE.md) for more examples and session management endpoints.
 
 ### Example API Call
 
