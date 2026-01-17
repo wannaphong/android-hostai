@@ -254,16 +254,8 @@ class OpenAIApiServer(
             val messages = request.getAsJsonArray("messages")
             val stream = request.get("stream")?.asBoolean ?: false
             
-            // Extract session ID from request (support multiple methods)
-            // 1. Check for explicit "session_id" or "conversation_id" field
-            // 2. Check for "user" field (OpenAI standard)
-            // 3. Check for custom "X-Session-ID" header
-            // 4. Fall back to default session
-            val sessionId = request.get("session_id")?.asString
-                ?: request.get("conversation_id")?.asString
-                ?: request.get("user")?.asString
-                ?: ctx.header("X-Session-ID")
-                ?: "default"
+            // Extract session ID using helper method
+            val sessionId = extractSessionId(ctx, request)
             
             LogManager.d(TAG, "Using session ID: $sessionId")
             
@@ -464,12 +456,8 @@ class OpenAIApiServer(
             val prompt = request.get("prompt")?.asString ?: ""
             val stream = request.get("stream")?.asBoolean ?: false
             
-            // Extract session ID (same logic as chat completions)
-            val sessionId = request.get("session_id")?.asString
-                ?: request.get("conversation_id")?.asString
-                ?: request.get("user")?.asString
-                ?: ctx.header("X-Session-ID")
-                ?: "default"
+            // Extract session ID using helper method
+            val sessionId = extractSessionId(ctx, request)
             
             LogManager.d(TAG, "Text completion - Using session ID: $sessionId")
             
@@ -714,6 +702,22 @@ class OpenAIApiServer(
                 "error" to mapOf("message" to (e.message ?: "Failed to clear sessions"))
             ))
         }
+    }
+    
+    /**
+     * Extract session ID from request using multiple methods in priority order:
+     * 1. session_id field
+     * 2. conversation_id field
+     * 3. user field (OpenAI standard)
+     * 4. X-Session-ID header
+     * 5. default session
+     */
+    private fun extractSessionId(ctx: JavalinContext, request: JsonObject): String {
+        return request.get("session_id")?.asString
+            ?: request.get("conversation_id")?.asString
+            ?: request.get("user")?.asString
+            ?: ctx.header("X-Session-ID")
+            ?: "default"
     }
     
     /**

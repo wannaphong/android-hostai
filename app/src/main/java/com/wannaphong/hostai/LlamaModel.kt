@@ -127,16 +127,34 @@ class LlamaModel(private val contentResolver: ContentResolver) {
      * @return The conversation instance
      */
     private fun getOrCreateConversation(sessionId: String, config: GenerationConfig): Conversation? {
-        return conversations.getOrPut(sessionId) {
-            LogManager.i(TAG, "Creating new conversation for session: $sessionId")
+        // Check if conversation already exists
+        conversations[sessionId]?.let { return it }
+        
+        // Create new conversation with proper error handling
+        return try {
+            val currentEngine = engine ?: throw IllegalStateException("Engine is not initialized")
+            
             val samplerConfig = SamplerConfig(
                 topK = config.topK,
                 topP = config.topP,
                 temperature = config.temperature
             )
-            engine?.createConversation(
+            val newConversation = currentEngine.createConversation(
                 ConversationConfig(samplerConfig = samplerConfig)
-            ) ?: throw IllegalStateException("Failed to create conversation: engine is null")
+            )
+            
+            // Only store if creation was successful
+            if (newConversation != null) {
+                conversations[sessionId] = newConversation
+                LogManager.i(TAG, "Created new conversation for session: $sessionId")
+                newConversation
+            } else {
+                LogManager.e(TAG, "Failed to create conversation: createConversation returned null")
+                null
+            }
+        } catch (e: Exception) {
+            LogManager.e(TAG, "Failed to create conversation for session $sessionId", e)
+            null
         }
     }
     
