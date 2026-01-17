@@ -1725,6 +1725,8 @@
                                 snackbarStore.showWarningMessage('$vuetify.dataIterator.snackbar.addfail')
                             } else {
                                 this.conversation = [];
+                                // Generate random conversation_id for new conversation
+                                chatbotStore.conversation_id = 'conv_' + Math.random().toString(36).substring(2, 15);
                                 snackbarStore.showSuccessMessage('$vuetify.dataIterator.snackbar.addnew')
                             }
                         },
@@ -1987,7 +1989,7 @@
                         url: "",
                         path: "/v1/chat/completions",
                         model: "llama-model",
-                        conversation_id: "default",
+                        conversation_id: 'conv_' + Math.random().toString(36).substring(2, 15),
                         authPrefix: "Bearer",
                         contentType: "application/json",
                         max_tokens_type: "max_tokens",
