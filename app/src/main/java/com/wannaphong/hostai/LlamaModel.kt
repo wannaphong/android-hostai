@@ -318,17 +318,19 @@ class LlamaModel(private val contentResolver: ContentResolver) {
                             // This simulates token-level streaming when the library provides complete responses
                             scope.launch {
                                 try {
-                                    // Split by whitespace to get word-like tokens
-                                    // We preserve spaces by splitting but not filtering empty strings from consecutive spaces
-                                    val words = fullText.split(" ")
+                                    // Split by whitespace while preserving the spaces as separate tokens
+                                    // This provides natural word-by-word streaming
+                                    val parts = fullText.split(" ")
                                     
-                                    for ((index, word) in words.withIndex()) {
-                                        if (word.isNotEmpty()) {
-                                            // Add space after each word except the last
-                                            val token = if (index < words.size - 1) "$word " else word
-                                            onToken(token)
-                                            // Small delay between tokens to simulate natural streaming
-                                            // and prevent overwhelming the client
+                                    for ((index, part) in parts.withIndex()) {
+                                        // Emit the word
+                                        if (part.isNotEmpty()) {
+                                            onToken(part)
+                                            delay(TOKEN_EMISSION_DELAY_MS)
+                                        }
+                                        // Emit the space after the word (except after the last word)
+                                        if (index < parts.size - 1) {
+                                            onToken(" ")
                                             delay(TOKEN_EMISSION_DELAY_MS)
                                         }
                                     }
@@ -346,6 +348,10 @@ class LlamaModel(private val contentResolver: ContentResolver) {
                             // Wait for streaming job to complete before resuming
                             scope.launch {
                                 // Await the streaming job completion
+                                // Note: If onMessage was never called, we complete the deferred here
+                                if (!streamingCompleted.isCompleted) {
+                                    streamingCompleted.complete(Unit)
+                                }
                                 streamingCompleted.await()
                                 // Resume the coroutine when streaming is done
                                 if (resumed.compareAndSet(false, true)) {
