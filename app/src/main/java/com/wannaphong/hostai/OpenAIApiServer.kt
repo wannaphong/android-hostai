@@ -69,9 +69,10 @@ class OpenAIApiServer(
                 // Exception handler
                 exception(Exception::class.java) { e, ctx ->
                     LogManager.e(TAG, "Error handling request", e)
-                    ctx.status(500).json(mapOf(
+                    val errorResponse = mapOf(
                         "error" to mapOf("message" to (e.message ?: "Internal server error"))
-                    ))
+                    )
+                    ctx.status(500).contentType("application/json").result(gson.toJson(errorResponse))
                 }
             }.start(port)
             
@@ -100,7 +101,7 @@ class OpenAIApiServer(
             "model_loaded" to model.isModelLoaded()
         )
         
-        ctx.json(health)
+        ctx.contentType("application/json").result(gson.toJson(health))
     }
     
     private fun handleModels(ctx: JavalinContext) {
@@ -118,7 +119,7 @@ class OpenAIApiServer(
             )
         )
         
-        ctx.json(models)
+        ctx.contentType("application/json").result(gson.toJson(models))
     }
     
     private fun handleRoot(ctx: JavalinContext) {
@@ -240,9 +241,10 @@ class OpenAIApiServer(
             // Security: Check content length
             if (bodyText.length > MAX_REQUEST_BODY_SIZE) {
                 LogManager.w(TAG, "Request body too large: ${bodyText.length} bytes")
-                ctx.status(413).json(mapOf(
+                val errorResponse = mapOf(
                     "error" to mapOf("message" to "Request body too large")
-                ))
+                )
+                ctx.status(413).contentType("application/json").result(gson.toJson(errorResponse))
                 return
             }
             
@@ -277,9 +279,10 @@ class OpenAIApiServer(
             }
         } catch (e: Exception) {
             LogManager.e(TAG, "Error handling chat completions", e)
-            ctx.status(500).json(mapOf(
+            val errorResponse = mapOf(
                 "error" to mapOf("message" to (e.message ?: "Internal server error"))
-            ))
+            )
+            ctx.status(500).contentType("application/json").result(gson.toJson(errorResponse))
         }
     }
     
@@ -319,7 +322,7 @@ class OpenAIApiServer(
         
         LogManager.i(TAG, "Chat completion completed successfully for session: $sessionId")
         
-        ctx.json(response)
+        ctx.contentType("application/json").result(gson.toJson(response))
     }
     
     private fun handleChatStreamingResponse(
@@ -444,9 +447,10 @@ class OpenAIApiServer(
             // Security: Check content length
             if (bodyText.length > MAX_REQUEST_BODY_SIZE) {
                 LogManager.w(TAG, "Request body too large: ${bodyText.length} bytes")
-                ctx.status(413).json(mapOf(
+                val errorResponse = mapOf(
                     "error" to mapOf("message" to "Request body too large")
-                ))
+                )
+                ctx.status(413).contentType("application/json").result(gson.toJson(errorResponse))
                 return
             }
             
@@ -471,9 +475,10 @@ class OpenAIApiServer(
             }
         } catch (e: Exception) {
             LogManager.e(TAG, "Error handling completions", e)
-            ctx.status(500).json(mapOf(
+            val errorResponse = mapOf(
                 "error" to mapOf("message" to (e.message ?: "Internal server error"))
-            ))
+            )
+            ctx.status(500).contentType("application/json").result(gson.toJson(errorResponse))
         }
     }
     
@@ -508,7 +513,7 @@ class OpenAIApiServer(
             )
         )
         
-        ctx.json(response)
+        ctx.contentType("application/json").result(gson.toJson(response))
     }
     
     private fun handleCompletionStreamingResponse(
@@ -649,12 +654,13 @@ class OpenAIApiServer(
                 "count" to sessionCount
             )
             
-            ctx.json(response)
+            ctx.contentType("application/json").result(gson.toJson(response))
         } catch (e: Exception) {
             LogManager.e(TAG, "Error listing sessions", e)
-            ctx.status(500).json(mapOf(
+            val errorResponse = mapOf(
                 "error" to mapOf("message" to (e.message ?: "Failed to list sessions"))
-            ))
+            )
+            ctx.status(500).contentType("application/json").result(gson.toJson(errorResponse))
         }
     }
     
@@ -666,21 +672,24 @@ class OpenAIApiServer(
             val cleared = model.clearSession(sessionId)
             
             if (cleared) {
-                ctx.json(mapOf(
+                val response = mapOf(
                     "deleted" to true,
                     "id" to sessionId,
                     "object" to "session"
-                ))
+                )
+                ctx.contentType("application/json").result(gson.toJson(response))
             } else {
-                ctx.status(404).json(mapOf(
+                val errorResponse = mapOf(
                     "error" to mapOf("message" to "Session not found: $sessionId")
-                ))
+                )
+                ctx.status(404).contentType("application/json").result(gson.toJson(errorResponse))
             }
         } catch (e: Exception) {
             LogManager.e(TAG, "Error deleting session $sessionId", e)
-            ctx.status(500).json(mapOf(
+            val errorResponse = mapOf(
                 "error" to mapOf("message" to (e.message ?: "Failed to delete session"))
-            ))
+            )
+            ctx.status(500).contentType("application/json").result(gson.toJson(errorResponse))
         }
     }
     
@@ -691,16 +700,18 @@ class OpenAIApiServer(
             val countBefore = model.getActiveSessionCount()
             model.clearAllSessions()
             
-            ctx.json(mapOf(
+            val response = mapOf(
                 "deleted" to true,
                 "count" to countBefore,
                 "object" to "sessions"
-            ))
+            )
+            ctx.contentType("application/json").result(gson.toJson(response))
         } catch (e: Exception) {
             LogManager.e(TAG, "Error clearing all sessions", e)
-            ctx.status(500).json(mapOf(
+            val errorResponse = mapOf(
                 "error" to mapOf("message" to (e.message ?: "Failed to clear sessions"))
-            ))
+            )
+            ctx.status(500).contentType("application/json").result(gson.toJson(errorResponse))
         }
     }
     
