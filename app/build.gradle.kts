@@ -54,8 +54,11 @@ dependencies {
     implementation("com.google.android.material:material:1.11.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     
-    // NanoHTTPD for lightweight HTTP server
-    implementation("org.nanohttpd:nanohttpd:2.3.1")
+    // Javalin for HTTP server with reliable streaming support
+    implementation("io.javalin:javalin:5.6.3")
+    
+    // SLF4J for Javalin logging (required dependency)
+    implementation("org.slf4j:slf4j-android:1.7.36")
     
     // Gson for JSON parsing
     implementation("com.google.code.gson:gson:2.10.1")

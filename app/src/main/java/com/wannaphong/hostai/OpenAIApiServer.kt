@@ -4,15 +4,13 @@ import android.content.Context
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonObject
-import fi.iki.elonen.NanoHTTPD
+import io.javalin.Javalin
+import io.javalin.http.Context as JavalinContext
 import kotlinx.coroutines.*
-import java.io.ByteArrayInputStream
 import java.io.IOException
-import java.io.PipedInputStream
-import java.io.PipedOutputStream
 
 /**
- * OpenAI-compatible API server implementation using NanoHTTPD.
+ * OpenAI-compatible API server implementation using Javalin.
  * Implements the following endpoints:
  * - POST /v1/chat/completions - Chat completions (OpenAI format)
  * - POST /v1/completions - Text completions (OpenAI format)
@@ -23,7 +21,7 @@ class OpenAIApiServer(
     private val port: Int,
     private val model: LlamaModel,
     private val context: Context
-) : NanoHTTPD(port) {
+) {
     
     private val gson = GsonBuilder()
         .disableHtmlEscaping()
@@ -32,58 +30,64 @@ class OpenAIApiServer(
     // Coroutine scope for streaming responses
     private val serverScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     
+    private var app: Javalin? = null
+    
     companion object {
         private const val TAG = "OpenAIApiServer"
         // Maximum request body size (10 MB) to prevent memory exhaustion attacks
         private const val MAX_REQUEST_BODY_SIZE = 10 * 1024 * 1024
     }
     
-    override fun start() {
-        super.start()
-        LogManager.i(TAG, "NanoHTTPD server started on port $port")
-    }
-    
-    override fun stop() {
-        super.stop()
-        serverScope.cancel() // Cancel all streaming coroutines
-        LogManager.i(TAG, "NanoHTTPD server stopped")
-    }
-    
-    override fun serve(session: IHTTPSession): Response {
-        val uri = session.uri
-        val method = session.method
-        
-        LogManager.d(TAG, "Received ${method.name} request to $uri")
-        
-        return try {
-            when {
-                uri == "/health" && method == Method.GET -> handleHealth()
-                uri == "/v1/models" && method == Method.GET -> handleModels()
-                uri == "/v1/chat/completions" && method == Method.POST -> handleChatCompletions(session)
-                uri == "/v1/completions" && method == Method.POST -> handleCompletions(session)
-                uri == "/" && method == Method.GET -> handleRoot()
-                uri == "/chat" && method == Method.GET -> handleChatUI()
-                uri.startsWith("/assets/") && method == Method.GET -> {
-                    val fileName = uri.substring(8) // Remove "/assets/"
-                    handleAssets(fileName)
+    fun start() {
+        try {
+            app = Javalin.create { config ->
+                // Configure Javalin
+                config.http.maxRequestSize = MAX_REQUEST_BODY_SIZE.toLong()
+                config.showJavalinBanner = false
+                config.http.asyncTimeout = 300000L // 5 minutes for streaming
+            }.apply {
+                // Health check
+                get("/health") { ctx -> handleHealth(ctx) }
+                
+                // Model endpoints
+                get("/v1/models") { ctx -> handleModels(ctx) }
+                
+                // Completion endpoints
+                post("/v1/chat/completions") { ctx -> handleChatCompletions(ctx) }
+                post("/v1/completions") { ctx -> handleCompletions(ctx) }
+                
+                // UI endpoints
+                get("/") { ctx -> handleRoot(ctx) }
+                get("/chat") { ctx -> handleChatUI(ctx) }
+                get("/assets/{fileName}") { ctx -> handleAssets(ctx) }
+                
+                // Exception handler
+                exception(Exception::class.java) { e, ctx ->
+                    LogManager.e(TAG, "Error handling request", e)
+                    ctx.status(500).json(mapOf(
+                        "error" to mapOf("message" to (e.message ?: "Internal server error"))
+                    ))
                 }
-                else -> newFixedLengthResponse(
-                    Response.Status.NOT_FOUND,
-                    MIME_PLAINTEXT,
-                    "Not Found"
-                )
-            }
+            }.start(port)
+            
+            LogManager.i(TAG, "Javalin server started on port $port")
         } catch (e: Exception) {
-            LogManager.e(TAG, "Error handling request", e)
-            newFixedLengthResponse(
-                Response.Status.INTERNAL_ERROR,
-                "application/json",
-                gson.toJson(mapOf("error" to mapOf("message" to e.message)))
-            )
+            LogManager.e(TAG, "Failed to start Javalin server", e)
+            throw e
         }
     }
     
-    private fun handleHealth(): Response {
+    fun stop() {
+        try {
+            app?.stop()
+            serverScope.cancel() // Cancel all streaming coroutines
+            LogManager.i(TAG, "Javalin server stopped")
+        } catch (e: Exception) {
+            LogManager.e(TAG, "Error stopping server", e)
+        }
+    }
+    
+    private fun handleHealth(ctx: JavalinContext) {
         LogManager.d(TAG, "Handling /health")
         
         val health = mapOf(
@@ -91,14 +95,10 @@ class OpenAIApiServer(
             "model_loaded" to model.isModelLoaded()
         )
         
-        return newFixedLengthResponse(
-            Response.Status.OK,
-            "application/json",
-            gson.toJson(health)
-        )
+        ctx.json(health)
     }
     
-    private fun handleModels(): Response {
+    private fun handleModels(ctx: JavalinContext) {
         LogManager.d(TAG, "Handling /v1/models")
         
         val models = mapOf(
@@ -113,14 +113,10 @@ class OpenAIApiServer(
             )
         )
         
-        return newFixedLengthResponse(
-            Response.Status.OK,
-            "application/json",
-            gson.toJson(models)
-        )
+        ctx.json(models)
     }
     
-    private fun handleRoot(): Response {
+    private fun handleRoot(ctx: JavalinContext) {
         LogManager.d(TAG, "Handling /")
         
         val html = """
@@ -165,38 +161,34 @@ class OpenAIApiServer(
             </html>
         """.trimIndent()
         
-        return newFixedLengthResponse(Response.Status.OK, "text/html", html)
+        ctx.html(html)
     }
     
-    private fun handleChatUI(): Response {
+    private fun handleChatUI(ctx: JavalinContext) {
         LogManager.d(TAG, "Handling /chat")
         
-        return try {
+        try {
             val inputStream = context.assets.open("index.html")
             val html = inputStream.bufferedReader().use { it.readText() }
-            newFixedLengthResponse(Response.Status.OK, "text/html", html)
+            ctx.html(html)
         } catch (e: Exception) {
             LogManager.e(TAG, "Error loading chat UI", e)
-            newFixedLengthResponse(
-                Response.Status.INTERNAL_ERROR,
-                "text/html",
+            ctx.status(500).html(
                 "<html><body><h1>Error loading chat UI</h1><p>${e.message}</p></body></html>"
             )
         }
     }
     
-    private fun handleAssets(fileName: String): Response {
+    private fun handleAssets(ctx: JavalinContext) {
+        val fileName = ctx.pathParam("fileName")
         LogManager.d(TAG, "Handling /assets/$fileName")
         
         try {
             // Security: Prevent path traversal attacks
             if (fileName.contains("..") || fileName.startsWith("/") || fileName.contains("\\")) {
                 LogManager.w(TAG, "Rejected potential path traversal attempt: $fileName")
-                return newFixedLengthResponse(
-                    Response.Status.FORBIDDEN,
-                    MIME_PLAINTEXT,
-                    "Invalid asset path"
-                )
+                ctx.status(403).result("Invalid asset path")
+                return
             }
             
             // Determine MIME type based on file extension
@@ -213,27 +205,28 @@ class OpenAIApiServer(
             val bytes = inputStream.readBytes()
             inputStream.close()
             
-            return newFixedLengthResponse(
-                Response.Status.OK,
-                mimeType,
-                ByteArrayInputStream(bytes),
-                bytes.size.toLong()
-            )
+            ctx.contentType(mimeType).result(bytes)
         } catch (e: Exception) {
             LogManager.e(TAG, "Error loading asset: $fileName", e)
-            return newFixedLengthResponse(
-                Response.Status.NOT_FOUND,
-                MIME_PLAINTEXT,
-                "Asset not found"
-            )
+            ctx.status(404).result("Asset not found")
         }
     }
     
-    private fun handleChatCompletions(session: IHTTPSession): Response {
+    private fun handleChatCompletions(ctx: JavalinContext) {
         LogManager.d(TAG, "Handling /v1/chat/completions")
         
-        return try {
-            val bodyText = getRequestBody(session)
+        try {
+            val bodyText = ctx.body()
+            
+            // Security: Check content length
+            if (bodyText.length > MAX_REQUEST_BODY_SIZE) {
+                LogManager.w(TAG, "Request body too large: ${bodyText.length} bytes")
+                ctx.status(413).json(mapOf(
+                    "error" to mapOf("message" to "Request body too large")
+                ))
+                return
+            }
+            
             val request = gson.fromJson(bodyText, JsonObject::class.java)
             
             LogManager.i(TAG, "Chat completion request received")
@@ -254,24 +247,23 @@ class OpenAIApiServer(
             LogManager.d(TAG, "Chat completion - stream: $stream, maxTokens: ${config.maxTokens}, temp: ${config.temperature}")
             
             if (stream) {
-                handleChatStreamingResponse(prompt, config)
+                handleChatStreamingResponse(ctx, prompt, config)
             } else {
-                handleChatNonStreamingResponse(prompt, config)
+                handleChatNonStreamingResponse(ctx, prompt, config)
             }
         } catch (e: Exception) {
             LogManager.e(TAG, "Error handling chat completions", e)
-            newFixedLengthResponse(
-                Response.Status.INTERNAL_ERROR,
-                "application/json",
-                gson.toJson(mapOf("error" to mapOf("message" to e.message)))
-            )
+            ctx.status(500).json(mapOf(
+                "error" to mapOf("message" to (e.message ?: "Internal server error"))
+            ))
         }
     }
     
     private fun handleChatNonStreamingResponse(
+        ctx: JavalinContext,
         prompt: String,
         config: GenerationConfig
-    ): Response {
+    ) {
         // Generate response
         val completion = model.generate(prompt, config)
         
@@ -302,74 +294,36 @@ class OpenAIApiServer(
         
         LogManager.i(TAG, "Chat completion completed successfully")
         
-        return newFixedLengthResponse(
-            Response.Status.OK,
-            "application/json",
-            gson.toJson(response)
-        )
+        ctx.json(response)
     }
     
     private fun handleChatStreamingResponse(
+        ctx: JavalinContext,
         prompt: String,
         config: GenerationConfig
-    ): Response {
+    ) {
         LogManager.i(TAG, "Starting chat streaming response")
-        
-        val pipedOutputStream = PipedOutputStream()
-        val pipedInputStream = PipedInputStream(pipedOutputStream)
         
         val id = "chatcmpl-${System.currentTimeMillis()}"
         val created = System.currentTimeMillis() / 1000
         
-        // Start streaming in a coroutine with proper scope
-        serverScope.launch {
-            try {
-                val writer = pipedOutputStream.writer(Charsets.UTF_8)
-                var tokenCount = 0
-                
-                val job = model.generateStream(prompt, config) { token ->
-                    try {
-                        tokenCount++
-                        
-                        // Format according to OpenAI SSE format for chat
-                        val chunk = mapOf(
-                            "id" to id,
-                            "object" to "chat.completion.chunk",
-                            "created" to created,
-                            "model" to model.getModelName(),
-                            "choices" to listOf(
-                                mapOf(
-                                    "index" to 0,
-                                    "delta" to mapOf(
-                                        "content" to token
-                                    ),
-                                    "finish_reason" to null
-                                )
-                            )
-                        )
-                        
-                        // Write SSE format: "data: {json}\n\n"
-                        writer.write("data: ${gson.toJson(chunk)}\n\n")
-                        writer.flush()
-                        
-                        LogManager.d(TAG, "Streamed token #$tokenCount")
-                    } catch (e: IOException) {
-                        // Client disconnected - stop streaming gracefully
-                        LogManager.d(TAG, "Client disconnected during streaming (token #$tokenCount)")
-                        throw e
-                    } catch (e: Exception) {
-                        LogManager.e(TAG, "Error writing token to stream", e)
-                        throw e
-                    }
-                }
-                
-                // Wait for streaming to complete, or handle error if job is null
-                if (job != null) {
-                    job.join()
-                } else {
-                    LogManager.e(TAG, "Failed to start streaming: generateStream returned null")
-                    // Write error chunk to client
-                    val errorChunk = mapOf(
+        // Use Javalin's SSE support for streaming
+        ctx.contentType("text/event-stream")
+        ctx.header("Cache-Control", "no-cache")
+        ctx.header("Connection", "keep-alive")
+        
+        // Get the response output stream
+        val outputStream = ctx.res().outputStream
+        
+        try {
+            var tokenCount = 0
+            
+            val job = model.generateStream(prompt, config) { token ->
+                try {
+                    tokenCount++
+                    
+                    // Format according to OpenAI SSE format for chat
+                    val chunk = mapOf(
                         "id" to id,
                         "object" to "chat.completion.chunk",
                         "created" to created,
@@ -378,21 +332,38 @@ class OpenAIApiServer(
                             mapOf(
                                 "index" to 0,
                                 "delta" to mapOf(
-                                    "content" to "Error: Failed to start streaming"
+                                    "content" to token
                                 ),
-                                "finish_reason" to "error"
+                                "finish_reason" to null
                             )
                         )
                     )
-                    writer.write("data: ${gson.toJson(errorChunk)}\n\n")
-                    writer.write("data: [DONE]\n\n")
-                    writer.flush()
-                    writer.close()
-                    return@launch
+                    
+                    // Write SSE format: "data: {json}\n\n"
+                    val sseData = "data: ${gson.toJson(chunk)}\n\n"
+                    outputStream.write(sseData.toByteArray(Charsets.UTF_8))
+                    outputStream.flush()
+                    
+                    LogManager.d(TAG, "Streamed token #$tokenCount")
+                } catch (e: IOException) {
+                    // Client disconnected - stop streaming gracefully
+                    LogManager.d(TAG, "Client disconnected during streaming (token #$tokenCount)")
+                    throw e
+                } catch (e: Exception) {
+                    LogManager.e(TAG, "Error writing token to stream", e)
+                    throw e
                 }
-                
-                // Send final chunk with finish_reason
-                val finalChunk = mapOf(
+            }
+            
+            // Wait for streaming to complete
+            // Using runBlocking is necessary here because Javalin handlers are not suspend functions
+            // Blocking is acceptable for streaming responses as we need to keep the connection open
+            if (job != null) {
+                runBlocking { job.join() }
+            } else {
+                LogManager.e(TAG, "Failed to start streaming: generateStream returned null")
+                // Write error chunk to client
+                val errorChunk = mapOf(
                     "id" to id,
                     "object" to "chat.completion.chunk",
                     "created" to created,
@@ -400,42 +371,59 @@ class OpenAIApiServer(
                     "choices" to listOf(
                         mapOf(
                             "index" to 0,
-                            "delta" to mapOf<String, String>(),
-                            "finish_reason" to "stop"
+                            "delta" to mapOf(
+                                "content" to "Error: Failed to start streaming"
+                            ),
+                            "finish_reason" to "error"
                         )
                     )
                 )
-                writer.write("data: ${gson.toJson(finalChunk)}\n\n")
-                writer.write("data: [DONE]\n\n")
-                writer.flush()
-                writer.close()
-                
-                LogManager.i(TAG, "Chat streaming completed with $tokenCount tokens")
-            } catch (e: Exception) {
-                LogManager.e(TAG, "Error in chat streaming", e)
-                try {
-                    pipedOutputStream.close()
-                } catch (ex: Exception) {
-                    // Ignore
-                }
+                val errorData = "data: ${gson.toJson(errorChunk)}\n\ndata: [DONE]\n\n"
+                outputStream.write(errorData.toByteArray(Charsets.UTF_8))
+                outputStream.flush()
+                return
             }
+            
+            // Send final chunk with finish_reason
+            val finalChunk = mapOf(
+                "id" to id,
+                "object" to "chat.completion.chunk",
+                "created" to created,
+                "model" to model.getModelName(),
+                "choices" to listOf(
+                    mapOf(
+                        "index" to 0,
+                        "delta" to mapOf<String, String>(),
+                        "finish_reason" to "stop"
+                    )
+                )
+            )
+            val finalData = "data: ${gson.toJson(finalChunk)}\n\ndata: [DONE]\n\n"
+            outputStream.write(finalData.toByteArray(Charsets.UTF_8))
+            outputStream.flush()
+            
+            LogManager.i(TAG, "Chat streaming completed with $tokenCount tokens")
+        } catch (e: Exception) {
+            LogManager.e(TAG, "Error in chat streaming", e)
         }
-        
-        val response = newChunkedResponse(
-            Response.Status.OK,
-            "text/event-stream",
-            pipedInputStream
-        )
-        response.addHeader("Cache-Control", "no-cache")
-        response.addHeader("Connection", "keep-alive")
-        return response
+        // Note: Javalin manages the output stream lifecycle; don't close it manually
     }
     
-    private fun handleCompletions(session: IHTTPSession): Response {
+    private fun handleCompletions(ctx: JavalinContext) {
         LogManager.d(TAG, "Handling /v1/completions")
         
-        return try {
-            val bodyText = getRequestBody(session)
+        try {
+            val bodyText = ctx.body()
+            
+            // Security: Check content length
+            if (bodyText.length > MAX_REQUEST_BODY_SIZE) {
+                LogManager.w(TAG, "Request body too large: ${bodyText.length} bytes")
+                ctx.status(413).json(mapOf(
+                    "error" to mapOf("message" to "Request body too large")
+                ))
+                return
+            }
+            
             val request = gson.fromJson(bodyText, JsonObject::class.java)
             
             // Extract parameters
@@ -446,24 +434,23 @@ class OpenAIApiServer(
             val config = extractGenerationConfig(request)
             
             if (stream) {
-                handleCompletionStreamingResponse(prompt, config)
+                handleCompletionStreamingResponse(ctx, prompt, config)
             } else {
-                handleCompletionNonStreamingResponse(prompt, config)
+                handleCompletionNonStreamingResponse(ctx, prompt, config)
             }
         } catch (e: Exception) {
             LogManager.e(TAG, "Error handling completions", e)
-            newFixedLengthResponse(
-                Response.Status.INTERNAL_ERROR,
-                "application/json",
-                gson.toJson(mapOf("error" to mapOf("message" to e.message)))
-            )
+            ctx.status(500).json(mapOf(
+                "error" to mapOf("message" to (e.message ?: "Internal server error"))
+            ))
         }
     }
     
     private fun handleCompletionNonStreamingResponse(
+        ctx: JavalinContext,
         prompt: String,
         config: GenerationConfig
-    ): Response {
+    ) {
         // Generate response
         val completion = model.generate(prompt, config)
         
@@ -489,129 +476,115 @@ class OpenAIApiServer(
             )
         )
         
-        return newFixedLengthResponse(
-            Response.Status.OK,
-            "application/json",
-            gson.toJson(response)
-        )
+        ctx.json(response)
     }
     
     private fun handleCompletionStreamingResponse(
+        ctx: JavalinContext,
         prompt: String,
         config: GenerationConfig
-    ): Response {
+    ) {
         LogManager.i(TAG, "Starting completion streaming response")
-        
-        val pipedOutputStream = PipedOutputStream()
-        val pipedInputStream = PipedInputStream(pipedOutputStream)
         
         val id = "cmpl-${System.currentTimeMillis()}"
         val created = System.currentTimeMillis() / 1000
         
-        // Start streaming in a coroutine with proper scope
-        serverScope.launch {
-            try {
-                val writer = pipedOutputStream.writer(Charsets.UTF_8)
-                var tokenCount = 0
-                
-                val job = model.generateStream(prompt, config) { token ->
-                    try {
-                        tokenCount++
-                        
-                        // Format according to OpenAI SSE format for completions
-                        val chunk = mapOf(
-                            "id" to id,
-                            "object" to "text_completion",
-                            "created" to created,
-                            "model" to model.getModelName(),
-                            "choices" to listOf(
-                                mapOf(
-                                    "text" to token,
-                                    "index" to 0,
-                                    "finish_reason" to null
-                                )
-                            )
-                        )
-                        
-                        // Write SSE format: "data: {json}\n\n"
-                        writer.write("data: ${gson.toJson(chunk)}\n\n")
-                        writer.flush()
-                        
-                        LogManager.d(TAG, "Streamed token #$tokenCount")
-                    } catch (e: IOException) {
-                        // Client disconnected - stop streaming gracefully
-                        LogManager.d(TAG, "Client disconnected during streaming (token #$tokenCount)")
-                        throw e
-                    } catch (e: Exception) {
-                        LogManager.e(TAG, "Error writing token to stream", e)
-                        throw e
-                    }
-                }
-                
-                // Wait for streaming to complete, or handle error if job is null
-                if (job != null) {
-                    job.join()
-                } else {
-                    LogManager.e(TAG, "Failed to start streaming: generateStream returned null")
-                    // Write error chunk to client
-                    val errorChunk = mapOf(
+        // Use Javalin's SSE support for streaming
+        ctx.contentType("text/event-stream")
+        ctx.header("Cache-Control", "no-cache")
+        ctx.header("Connection", "keep-alive")
+        
+        // Get the response output stream
+        val outputStream = ctx.res().outputStream
+        
+        try {
+            var tokenCount = 0
+            
+            val job = model.generateStream(prompt, config) { token ->
+                try {
+                    tokenCount++
+                    
+                    // Format according to OpenAI SSE format for completions
+                    val chunk = mapOf(
                         "id" to id,
                         "object" to "text_completion",
                         "created" to created,
                         "model" to model.getModelName(),
                         "choices" to listOf(
                             mapOf(
-                                "text" to "Error: Failed to start streaming",
+                                "text" to token,
                                 "index" to 0,
-                                "finish_reason" to "error"
+                                "finish_reason" to null
                             )
                         )
                     )
-                    writer.write("data: ${gson.toJson(errorChunk)}\n\n")
-                    writer.write("data: [DONE]\n\n")
-                    writer.flush()
-                    writer.close()
-                    return@launch
+                    
+                    // Write SSE format: "data: {json}\n\n"
+                    val sseData = "data: ${gson.toJson(chunk)}\n\n"
+                    outputStream.write(sseData.toByteArray(Charsets.UTF_8))
+                    outputStream.flush()
+                    
+                    LogManager.d(TAG, "Streamed token #$tokenCount")
+                } catch (e: IOException) {
+                    // Client disconnected - stop streaming gracefully
+                    LogManager.d(TAG, "Client disconnected during streaming (token #$tokenCount)")
+                    throw e
+                } catch (e: Exception) {
+                    LogManager.e(TAG, "Error writing token to stream", e)
+                    throw e
                 }
-                
-                // Send final chunk with finish_reason
-                val finalChunk = mapOf(
+            }
+            
+            // Wait for streaming to complete
+            // Using runBlocking is necessary here because Javalin handlers are not suspend functions
+            // Blocking is acceptable for streaming responses as we need to keep the connection open
+            if (job != null) {
+                runBlocking { job.join() }
+            } else {
+                LogManager.e(TAG, "Failed to start streaming: generateStream returned null")
+                // Write error chunk to client
+                val errorChunk = mapOf(
                     "id" to id,
                     "object" to "text_completion",
                     "created" to created,
                     "model" to model.getModelName(),
                     "choices" to listOf(
                         mapOf(
-                            "text" to "",
+                            "text" to "Error: Failed to start streaming",
                             "index" to 0,
-                            "finish_reason" to "stop"
+                            "finish_reason" to "error"
                         )
                     )
                 )
-                writer.write("data: ${gson.toJson(finalChunk)}\n\n")
-                writer.write("data: [DONE]\n\n")
-                writer.flush()
-                writer.close()
-                
-                LogManager.i(TAG, "Completion streaming completed with $tokenCount tokens")
-            } catch (e: Exception) {
-                LogManager.e(TAG, "Error in completion streaming", e)
-                try {
-                    pipedOutputStream.close()
-                } catch (ex: Exception) {
-                    // Ignore
-                }
+                val errorData = "data: ${gson.toJson(errorChunk)}\n\ndata: [DONE]\n\n"
+                outputStream.write(errorData.toByteArray(Charsets.UTF_8))
+                outputStream.flush()
+                return
             }
+            
+            // Send final chunk with finish_reason
+            val finalChunk = mapOf(
+                "id" to id,
+                "object" to "text_completion",
+                "created" to created,
+                "model" to model.getModelName(),
+                "choices" to listOf(
+                    mapOf(
+                        "text" to "",
+                        "index" to 0,
+                        "finish_reason" to "stop"
+                    )
+                )
+            )
+            val finalData = "data: ${gson.toJson(finalChunk)}\n\ndata: [DONE]\n\n"
+            outputStream.write(finalData.toByteArray(Charsets.UTF_8))
+            outputStream.flush()
+            
+            LogManager.i(TAG, "Completion streaming completed with $tokenCount tokens")
+        } catch (e: Exception) {
+            LogManager.e(TAG, "Error in completion streaming", e)
         }
-        
-        val response = newChunkedResponse(
-            Response.Status.OK,
-            "text/event-stream",
-            pipedInputStream
-        )
-        response.addHeader("Cache-Control", "no-cache")
-        response.addHeader("Connection", "keep-alive")
-        return response
+        // Note: Javalin manages the output stream lifecycle; don't close it manually
     }
     
     private fun buildPromptFromMessages(messages: com.google.gson.JsonArray): String {
@@ -637,33 +610,5 @@ class OpenAIApiServer(
             topP = request.get("top_p")?.asDouble ?: 0.95,
             seed = request.get("seed")?.asInt ?: -1
         )
-    }
-    
-    /**
-     * Safely receive request body with size limits to prevent memory exhaustion attacks.
-     */
-    private fun getRequestBody(session: IHTTPSession): String {
-        val contentLength = session.headers["content-length"]?.toLongOrNull()
-        
-        // Security: Check content length before reading
-        // If content-length header is present and exceeds limit, reject immediately
-        if (contentLength != null && contentLength > MAX_REQUEST_BODY_SIZE) {
-            LogManager.w(TAG, "Request body too large: $contentLength bytes (max: $MAX_REQUEST_BODY_SIZE)")
-            throw IOException("Request body too large")
-        }
-        
-        // Parse body - NanoHTTPD handles reading and temporary file storage
-        val files = mutableMapOf<String, String>()
-        session.parseBody(files)
-        
-        val postData = files["postData"] ?: ""
-        
-        // Additional safety check on actual data size
-        if (postData.length > MAX_REQUEST_BODY_SIZE) {
-            LogManager.w(TAG, "Parsed body too large: ${postData.length} bytes (max: $MAX_REQUEST_BODY_SIZE)")
-            throw IOException("Request body too large")
-        }
-        
-        return postData
     }
 }
