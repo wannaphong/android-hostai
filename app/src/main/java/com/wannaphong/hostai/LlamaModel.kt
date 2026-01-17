@@ -48,7 +48,6 @@ class LlamaModel(private val contentResolver: ContentResolver) {
     
     // LiteRT components
     private var engine: Engine? = null
-    private var conversation: Conversation? = null // Keep for backward compatibility
     private val conversations = ConcurrentHashMap<String, Conversation>()
     private val scope = CoroutineScope(Dispatchers.IO)
     
@@ -351,14 +350,10 @@ class LlamaModel(private val contentResolver: ContentResolver) {
     }
     
     /**
-     * Cleanup resources by closing conversation and optionally engine.
+     * Cleanup resources by closing conversations and optionally engine.
      */
     private fun cleanup(closeEngine: Boolean = false) {
         try {
-            // Clean up backward compatibility conversation
-            conversation?.close()
-            conversation = null
-            
             // Clean up all session conversations
             clearAllSessions()
             
