@@ -301,20 +301,49 @@ class LlamaModel(private val contentResolver: ContentResolver) {
                 // Use suspendCancellableCoroutine to wait for async callback to complete
                 suspendCancellableCoroutine<Unit> { continuation ->
                     val resumed = AtomicBoolean(false)
+                    val streamingJob = AtomicBoolean(false)
                     
                     // Use MessageCallback for streaming
                     val callback = object : MessageCallback {
                         override fun onMessage(message: Message) {
-                            // LiteRT's Message contains the generated token/text
-                            // Using toString() to extract the text content
-                            onToken(message.toString())
+                            // LiteRT's MessageCallback.onMessage is called once with the complete response
+                            // To provide proper streaming, we need to chunk the response and emit it progressively
+                            val fullText = message.toString()
+                            
+                            // Stream the response in chunks (word by word for better UX)
+                            // This simulates token-level streaming when the library provides complete responses
+                            streamingJob.set(true)
+                            scope.launch {
+                                try {
+                                    // Split by whitespace to get word-like tokens
+                                    val tokens = fullText.split(Regex("(?<=\\s)|(?=\\s)")).filter { it.isNotEmpty() }
+                                    
+                                    for (token in tokens) {
+                                        onToken(token)
+                                        // Small delay between tokens to simulate natural streaming
+                                        // and prevent overwhelming the client
+                                        delay(10)
+                                    }
+                                } catch (e: Exception) {
+                                    LogManager.e(TAG, "Error during chunked streaming", e)
+                                } finally {
+                                    streamingJob.set(false)
+                                }
+                            }
                         }
                         
                         override fun onDone() {
                             LogManager.i(TAG, "Streaming completed for session '$sessionId'")
-                            // Resume the coroutine when streaming is done
-                            if (resumed.compareAndSet(false, true)) {
-                                continuation.resume(Unit)
+                            // Wait for streaming job to complete before resuming
+                            scope.launch {
+                                // Wait until streaming job is done
+                                while (streamingJob.get()) {
+                                    delay(10)
+                                }
+                                // Resume the coroutine when streaming is done
+                                if (resumed.compareAndSet(false, true)) {
+                                    continuation.resume(Unit)
+                                }
                             }
                         }
                         
