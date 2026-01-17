@@ -645,9 +645,9 @@ class OpenAIApiServer(
             val config = extractGenerationConfig(request)
             
             if (stream) {
-                handleCompletionStreamingResponse(ctx, prompt, config, sessionId)
+                handleCompletionStreamingResponse(ctx, prompt, config, sessionId, bodyText)
             } else {
-                handleCompletionNonStreamingResponse(ctx, prompt, config, sessionId)
+                handleCompletionNonStreamingResponse(ctx, prompt, config, sessionId, bodyText)
             }
         } catch (e: Exception) {
             LogManager.e(TAG, "Error handling completions", e)
@@ -662,7 +662,8 @@ class OpenAIApiServer(
         ctx: JavalinContext,
         prompt: String,
         config: GenerationConfig,
-        sessionId: String
+        sessionId: String,
+        bodyText: String
     ) {
         // Generate response with session ID
         val completion = model.generate(prompt, config, sessionId)
@@ -692,7 +693,7 @@ class OpenAIApiServer(
         val responseJson = gson.toJson(response)
         
         // Log request if logging is enabled
-        logRequestIfEnabled(ctx, "/v1/completions", prompt, responseJson)
+        logRequestIfEnabled(ctx, "/v1/completions", bodyText, responseJson)
         
         ctx.contentType("application/json").result(responseJson)
     }
@@ -701,7 +702,8 @@ class OpenAIApiServer(
         ctx: JavalinContext,
         prompt: String,
         config: GenerationConfig,
-        sessionId: String
+        sessionId: String,
+        bodyText: String
     ) {
         LogManager.i(TAG, "Starting completion streaming response for session: $sessionId")
         
