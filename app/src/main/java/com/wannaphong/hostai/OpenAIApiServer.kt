@@ -292,7 +292,22 @@ class OpenAIApiServer(
             val stream = request.get("stream")?.asBoolean ?: false
             val store = request.get("store")?.asBoolean ?: false
             val metadata = request.get("metadata")?.asJsonObject?.let { meta ->
-                meta.entrySet().associate { it.key to it.value }
+                meta.entrySet().associate { entry ->
+                    val value: Any = when {
+                        entry.value.isJsonPrimitive -> {
+                            val primitive = entry.value.asJsonPrimitive
+                            when {
+                                primitive.isBoolean -> primitive.asBoolean
+                                primitive.isNumber -> primitive.asNumber
+                                primitive.isString -> primitive.asString
+                                else -> primitive.asString
+                            }
+                        }
+                        entry.value.isJsonNull -> "null"
+                        else -> entry.value.toString()
+                    }
+                    entry.key to value
+                }
             }
             
             // Extract session ID using helper method
@@ -806,6 +821,18 @@ class OpenAIApiServer(
     }
     
     /**
+     * Helper function to get all messages including the assistant response
+     */
+    private fun getAllMessages(storedCompletion: StoredCompletion): List<Map<String, String>> {
+        val allMessages = storedCompletion.messages.toMutableList()
+        allMessages.add(mapOf(
+            "role" to "assistant",
+            "content" to storedCompletion.responseContent
+        ))
+        return allMessages
+    }
+    
+    /**
      * Handle GET /v1/chat/completions/{completion_id}
      * Get a stored chat completion. Only completions created with store=true are returned.
      */
@@ -827,12 +854,8 @@ class OpenAIApiServer(
                 return
             }
             
-            // Build response with all messages including the assistant response
-            val allMessages = storedCompletion.messages.toMutableList()
-            allMessages.add(mapOf(
-                "role" to "assistant",
-                "content" to storedCompletion.responseContent
-            ))
+            // Use helper function to get all messages
+            val allMessages = getAllMessages(storedCompletion)
             
             val response = mutableMapOf<String, Any>(
                 "id" to storedCompletion.id,
@@ -852,9 +875,7 @@ class OpenAIApiServer(
             )
             
             // Add metadata if present
-            if (storedCompletion.metadata != null) {
-                response["metadata"] = storedCompletion.metadata!!
-            }
+            storedCompletion.metadata?.let { response["metadata"] = it }
             
             LogManager.i(TAG, "Retrieved stored completion: $completionId")
             ctx.contentType("application/json").result(gson.toJson(response))
@@ -889,12 +910,8 @@ class OpenAIApiServer(
                 return
             }
             
-            // Include all messages: original messages + assistant response
-            val allMessages = storedCompletion.messages.toMutableList()
-            allMessages.add(mapOf(
-                "role" to "assistant",
-                "content" to storedCompletion.responseContent
-            ))
+            // Use helper function to get all messages
+            val allMessages = getAllMessages(storedCompletion)
             
             val response = mapOf(
                 "object" to "list",
@@ -947,7 +964,22 @@ class OpenAIApiServer(
             
             // Extract metadata from request
             val newMetadata = request.get("metadata")?.asJsonObject?.let { meta ->
-                meta.entrySet().associate { it.key to it.value }
+                meta.entrySet().associate { entry ->
+                    val value: Any = when {
+                        entry.value.isJsonPrimitive -> {
+                            val primitive = entry.value.asJsonPrimitive
+                            when {
+                                primitive.isBoolean -> primitive.asBoolean
+                                primitive.isNumber -> primitive.asNumber
+                                primitive.isString -> primitive.asString
+                                else -> primitive.asString
+                            }
+                        }
+                        entry.value.isJsonNull -> "null"
+                        else -> entry.value.toString()
+                    }
+                    entry.key to value
+                }
             }
             
             if (newMetadata == null) {
