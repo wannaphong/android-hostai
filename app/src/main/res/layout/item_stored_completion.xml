@@ -3,91 +3,97 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_margin="8dp"
+    android:layout_marginStart="8dp"
+    android:layout_marginEnd="8dp"
+    android:layout_marginTop="8dp"
+    android:layout_marginBottom="8dp"
     app:cardElevation="2dp"
-    app:cardCornerRadius="8dp">
+    app:cardCornerRadius="16dp">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="16dp">
+        android:padding="20dp">
 
         <TextView
             android:id="@+id/completionIdText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="chatcmpl-1234567890"
-            android:textSize="14sp"
+            android:textSize="15sp"
             android:textStyle="bold"
             android:textColor="?attr/colorOnSurface"
-            android:fontFamily="monospace" />
+            android:fontFamily="monospace"
+            android:maxLines="1"
+            android:ellipsize="end" />
 
         <TextView
             android:id="@+id/completionTimeText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Jan 17, 14:30"
-            android:textSize="12sp"
+            android:textSize="13sp"
             android:textColor="?attr/colorOnSurface"
-            android:alpha="0.7"
-            android:layout_marginTop="4dp" />
+            android:alpha="0.65"
+            android:layout_marginTop="8dp" />
 
         <TextView
             android:id="@+id/completionModelText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Model: llama-model"
-            android:textSize="12sp"
+            android:textSize="13sp"
             android:textColor="?attr/colorOnSurface"
-            android:alpha="0.7"
-            android:layout_marginTop="2dp" />
+            android:alpha="0.65"
+            android:layout_marginTop="4dp" />
 
         <TextView
             android:id="@+id/completionMessagesText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="3 message(s)"
-            android:textSize="12sp"
+            android:textSize="13sp"
             android:textColor="?attr/colorOnSurface"
-            android:alpha="0.7"
-            android:layout_marginTop="2dp" />
+            android:alpha="0.65"
+            android:layout_marginTop="4dp" />
 
         <TextView
             android:id="@+id/completionMetadataText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Has metadata"
-            android:textSize="11sp"
+            android:textSize="12sp"
             android:textColor="?attr/colorPrimary"
-            android:layout_marginTop="4dp"
+            android:textStyle="bold"
+            android:layout_marginTop="6dp"
             android:visibility="gone" />
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:layout_marginTop="12dp">
+            android:layout_marginTop="16dp">
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/exportButton"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
+                android:layout_height="48dp"
                 android:layout_weight="1"
                 android:text="@string/export"
-                android:textSize="12sp"
-                android:layout_marginEnd="4dp"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
+                android:textSize="14sp"
+                android:layout_marginEnd="8dp"
+                style="@style/Widget.HostAI.Button.Outlined" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/deleteButton"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
+                android:layout_height="48dp"
                 android:layout_weight="1"
                 android:text="@string/delete"
-                android:textSize="12sp"
-                android:layout_marginStart="4dp"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
+                android:textSize="14sp"
+                android:layout_marginStart="8dp"
+                style="@style/Widget.HostAI.Button.Outlined" />
         </LinearLayout>
 
     </LinearLayout>

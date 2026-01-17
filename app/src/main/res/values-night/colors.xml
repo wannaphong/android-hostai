@@ -1,31 +1,41 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Primary Colors - Adjusted for dark mode -->
-    <color name="primary">#FF818CF8</color>
-    <color name="primary_variant">#FFA5B4FC</color>
-    <color name="primary_dark">#FF6366F1</color>
+    <color name="primary">#FF7B87F9</color>
+    <color name="primary_variant">#FF9BA7FF</color>
+    <color name="primary_dark">#FF5B67F1</color>
     
     <!-- Secondary Colors - Brighter for dark mode -->
-    <color name="secondary">#FF2DD4BF</color>
-    <color name="secondary_variant">#FF5EEAD4</color>
+    <color name="secondary">#FF22D3EE</color>
+    <color name="secondary_variant">#FF67E8F9</color>
     
     <!-- Background Colors - Dark Mode -->
-    <color name="background">#FF111827</color>
-    <color name="surface">#FF1F2937</color>
-    <color name="surface_variant">#FF374151</color>
+    <color name="background">#FF0F172A</color>
+    <color name="surface">#FF1E293B</color>
+    <color name="surface_variant">#FF334155</color>
+    <color name="surface_elevated">#FF2A3749</color>
     
     <!-- Text Colors - Dark Mode -->
     <color name="on_primary">#FF000000</color>
     <color name="on_secondary">#FF000000</color>
-    <color name="on_background">#FFF9FAFB</color>
-    <color name="on_surface">#FFF3F4F6</color>
-    <color name="on_surface_variant">#FF9CA3AF</color>
+    <color name="on_background">#FFF8FAFC</color>
+    <color name="on_surface">#FFF1F5F9</color>
+    <color name="on_surface_variant">#FF94A3B8</color>
     
     <!-- Status Colors - Adjusted for dark mode visibility -->
     <color name="success">#FF34D399</color>
+    <color name="success_light">#FF6EE7B7</color>
     <color name="error">#FFF87171</color>
+    <color name="error_light">#FFFCA5A5</color>
     <color name="warning">#FFFBBF24</color>
+    <color name="warning_light">#FFFDE047</color>
     <color name="info">#FF60A5FA</color>
+    <color name="info_light">#FF93C5FD</color>
+    
+    <!-- Additional UI Colors -->
+    <color name="card_border">#FF334155</color>
+    <color name="divider">#FF334155</color>
+    <color name="ripple_light">#1A7B87F9</color>
     
     <!-- Legacy support -->
     <color name="green">#FF34D399</color>

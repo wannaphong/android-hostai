@@ -5,238 +5,289 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="?android:attr/colorBackground"
-    android:padding="16dp"
     tools:context=".MainActivity">
 
+    <!-- App Bar -->
     <TextView
         android:id="@+id/titleText"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:text="@string/app_name"
-        android:textSize="28sp"
+        android:textSize="32sp"
         android:textStyle="bold"
         android:textColor="?attr/colorOnBackground"
-        android:gravity="center"
+        android:fontFamily="sans-serif-medium"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
+        android:paddingTop="24dp"
+        android:paddingBottom="8dp"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        android:layout_marginTop="8dp" />
+        app:layout_constraintEnd_toEndOf="parent" />
 
-    <com.google.android.material.card.MaterialCardView
-        android:id="@+id/statusCard"
+    <androidx.core.widget.NestedScrollView
         android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="20dp"
-        app:cardElevation="3dp"
-        app:cardCornerRadius="12dp"
+        android:layout_height="0dp"
+        android:fillViewport="true"
+        android:clipToPadding="false"
         app:layout_constraintTop_toBottomOf="@id/titleText"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent">
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:padding="18dp">
-
-            <TextView
-                android:id="@+id/serverStatusLabel"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/server_status"
-                android:textSize="14sp"
-                android:textColor="?attr/colorOnSurface"
-                android:textStyle="bold"
-                android:alpha="0.7" />
-
-            <TextView
-                android:id="@+id/serverStatusText"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/server_stopped"
-                android:textSize="20sp"
-                android:textColor="@color/red"
-                android:textStyle="bold"
-                android:layout_marginTop="6dp" />
-
-            <TextView
-                android:id="@+id/serverUrlLabel"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/server_url"
-                android:textSize="13sp"
-                android:textColor="?attr/colorOnSurface"
-                android:alpha="0.7"
-                android:layout_marginTop="16dp"
-                android:visibility="gone" />
-
-            <TextView
-                android:id="@+id/serverUrlText"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:textSize="14sp"
-                android:textColor="?attr/colorPrimary"
-                android:textStyle="bold"
-                android:textIsSelectable="true"
-                android:layout_marginTop="4dp"
-                android:visibility="gone" />
-
-            <Button
-                android:id="@+id/copyUrlButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/copy_url"
-                android:layout_marginTop="12dp"
-                android:visibility="gone"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
-        </LinearLayout>
-    </com.google.android.material.card.MaterialCardView>
-
-    <com.google.android.material.card.MaterialCardView
-        android:id="@+id/modelCard"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        app:cardElevation="3dp"
-        app:cardCornerRadius="12dp"
-        app:layout_constraintTop_toBottomOf="@id/statusCard"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent">
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:padding="18dp">
-
-            <TextView
-                android:id="@+id/modelStatusLabel"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/model_status"
-                android:textSize="14sp"
-                android:textColor="?attr/colorOnSurface"
-                android:textStyle="bold"
-                android:alpha="0.7" />
-
-            <TextView
-                android:id="@+id/modelStatusText"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/model_not_loaded"
-                android:textSize="15sp"
-                android:textColor="?attr/colorOnSurface"
-                android:layout_marginTop="6dp" />
-
-            <Button
-                android:id="@+id/selectModelButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/select_model"
-                android:layout_marginTop="12dp"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
-        </LinearLayout>
-    </com.google.android.material.card.MaterialCardView>
-
-    <com.google.android.material.card.MaterialCardView
-        android:id="@+id/infoCard"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        app:cardElevation="3dp"
-        app:cardCornerRadius="12dp"
-        app:layout_constraintTop_toBottomOf="@id/modelCard"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent">
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:padding="18dp">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/server_info"
-                android:textSize="13sp"
-                android:textColor="?attr/colorOnSurface"
-                android:alpha="0.8"
-                android:lineSpacingExtra="2dp" />
-        </LinearLayout>
-    </com.google.android.material.card.MaterialCardView>
-
-    <com.google.android.material.card.MaterialCardView
-        android:id="@+id/buttonLayout"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="16dp"
-        app:cardElevation="3dp"
-        app:cardCornerRadius="12dp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
-        <LinearLayout
+        <androidx.constraintlayout.widget.ConstraintLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:padding="18dp">
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp"
+            android:paddingBottom="24dp">
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/startStopButton"
-                android:layout_width="match_parent"
-                android:layout_height="56dp"
-                android:text="@string/start_server"
-                android:textSize="16sp"
-                android:textStyle="bold" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/testServerButton"
-                android:layout_width="match_parent"
+            <!-- Server Status Card -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/statusCard"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:text="@string/test_server"
-                android:textSize="15sp"
                 android:layout_marginTop="8dp"
-                android:visibility="gone"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
+                app:cardElevation="2dp"
+                app:cardCornerRadius="16dp"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent">
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/viewLogsButton"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/view_logs"
-                android:textSize="15sp"
-                android:layout_marginTop="8dp"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="20dp">
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/manageCompletionsButton"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/manage_completions"
-                android:textSize="15sp"
-                android:layout_marginTop="8dp"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
+                    <TextView
+                        android:id="@+id/serverStatusLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/server_status"
+                        android:textSize="13sp"
+                        android:textColor="?attr/colorOnSurface"
+                        android:textStyle="bold"
+                        android:alpha="0.65"
+                        android:letterSpacing="0.03"
+                        android:textAllCaps="true" />
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/manageModelsButton"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/manage_models"
-                android:textSize="15sp"
-                android:layout_marginTop="8dp"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
+                    <TextView
+                        android:id="@+id/serverStatusText"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/server_stopped"
+                        android:textSize="24sp"
+                        android:textColor="@color/red"
+                        android:textStyle="bold"
+                        android:fontFamily="sans-serif-medium"
+                        android:layout_marginTop="8dp" />
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/exitButton"
-                android:layout_width="match_parent"
+                    <View
+                        android:id="@+id/serverUrlDivider"
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:background="@color/divider"
+                        android:layout_marginTop="16dp"
+                        android:visibility="gone" />
+
+                    <TextView
+                        android:id="@+id/serverUrlLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/server_url"
+                        android:textSize="13sp"
+                        android:textColor="?attr/colorOnSurface"
+                        android:textStyle="bold"
+                        android:alpha="0.65"
+                        android:letterSpacing="0.03"
+                        android:textAllCaps="true"
+                        android:layout_marginTop="16dp"
+                        android:visibility="gone" />
+
+                    <TextView
+                        android:id="@+id/serverUrlText"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textSize="15sp"
+                        android:textColor="?attr/colorPrimary"
+                        android:textStyle="bold"
+                        android:fontFamily="monospace"
+                        android:textIsSelectable="true"
+                        android:layout_marginTop="6dp"
+                        android:visibility="gone" />
+
+                    <Button
+                        android:id="@+id/copyUrlButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="48dp"
+                        android:text="@string/copy_url"
+                        android:textSize="14sp"
+                        android:paddingStart="20dp"
+                        android:paddingEnd="20dp"
+                        android:layout_marginTop="12dp"
+                        android:visibility="gone"
+                        style="@style/Widget.HostAI.Button.Outlined" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Model Status Card -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/modelCard"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:text="@string/exit_app"
-                android:textSize="15sp"
-                android:layout_marginTop="8dp"
-                style="@style/Widget.MaterialComponents.Button.TextButton" />
-        </LinearLayout>
-    </com.google.android.material.card.MaterialCardView>
+                android:layout_marginTop="16dp"
+                app:cardElevation="2dp"
+                app:cardCornerRadius="16dp"
+                app:layout_constraintTop_toBottomOf="@id/statusCard"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="20dp">
+
+                    <TextView
+                        android:id="@+id/modelStatusLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/model_status"
+                        android:textSize="13sp"
+                        android:textColor="?attr/colorOnSurface"
+                        android:textStyle="bold"
+                        android:alpha="0.65"
+                        android:letterSpacing="0.03"
+                        android:textAllCaps="true" />
+
+                    <TextView
+                        android:id="@+id/modelStatusText"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/model_not_loaded"
+                        android:textSize="16sp"
+                        android:textColor="?attr/colorOnSurface"
+                        android:lineSpacingExtra="2dp"
+                        android:layout_marginTop="8dp" />
+
+                    <Button
+                        android:id="@+id/selectModelButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="48dp"
+                        android:text="@string/select_model"
+                        android:textSize="14sp"
+                        android:paddingStart="20dp"
+                        android:paddingEnd="20dp"
+                        android:layout_marginTop="12dp"
+                        style="@style/Widget.HostAI.Button.Outlined" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Info Card -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/infoCard"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                app:cardElevation="2dp"
+                app:cardCornerRadius="16dp"
+                app:layout_constraintTop_toBottomOf="@id/modelCard"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="20dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/server_info"
+                        android:textSize="14sp"
+                        android:textColor="?attr/colorOnSurface"
+                        android:alpha="0.75"
+                        android:lineSpacingExtra="3dp" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Actions Card -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/buttonLayout"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                app:cardElevation="2dp"
+                app:cardCornerRadius="16dp"
+                app:layout_constraintTop_toBottomOf="@id/infoCard"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="20dp">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/startStopButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="56dp"
+                        android:text="@string/start_server"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/testServerButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="52dp"
+                        android:text="@string/test_server"
+                        android:textSize="15sp"
+                        android:layout_marginTop="10dp"
+                        android:visibility="gone"
+                        style="@style/Widget.HostAI.Button.Outlined" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/viewLogsButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="52dp"
+                        android:text="@string/view_logs"
+                        android:textSize="15sp"
+                        android:layout_marginTop="10dp"
+                        style="@style/Widget.HostAI.Button.Outlined" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/manageCompletionsButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="52dp"
+                        android:text="@string/manage_completions"
+                        android:textSize="15sp"
+                        android:layout_marginTop="10dp"
+                        style="@style/Widget.HostAI.Button.Outlined" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/manageModelsButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="52dp"
+                        android:text="@string/manage_models"
+                        android:textSize="15sp"
+                        android:layout_marginTop="10dp"
+                        style="@style/Widget.HostAI.Button.Outlined" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/exitButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="52dp"
+                        android:text="@string/exit_app"
+                        android:textSize="15sp"
+                        android:layout_marginTop="10dp"
+                        style="@style/Widget.HostAI.Button.Text" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+        </androidx.constraintlayout.widget.ConstraintLayout>
+    </androidx.core.widget.NestedScrollView>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

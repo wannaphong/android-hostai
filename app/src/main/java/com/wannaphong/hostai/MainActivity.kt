@@ -277,6 +277,7 @@ class MainActivity : AppCompatActivity() {
             val port = apiServerService?.getServerPort() ?: ApiServerService.DEFAULT_PORT
             val serverUrl = "http://$ipAddress:$port"
             
+            binding.serverUrlDivider.visibility = View.VISIBLE
             binding.serverUrlLabel.visibility = View.VISIBLE
             binding.serverUrlText.visibility = View.VISIBLE
             binding.serverUrlText.text = serverUrl
@@ -294,6 +295,7 @@ class MainActivity : AppCompatActivity() {
             binding.serverStatusText.setTextColor(ContextCompat.getColor(this, R.color.red))
             binding.startStopButton.text = getString(R.string.start_server)
             
+            binding.serverUrlDivider.visibility = View.GONE
             binding.serverUrlLabel.visibility = View.GONE
             binding.serverUrlText.visibility = View.GONE
             binding.copyUrlButton.visibility = View.GONE
