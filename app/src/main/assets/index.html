@@ -523,6 +523,10 @@
                                             <v-chip label color="primary" class="ma-1">
                                                 {{chatbotStore.model || "No model" }}
                                             </v-chip>
+
+                                            <v-chip label color="primary" class="ma-1">
+                                                {{chatbotStore.conversation_id || "default" }}
+                                            </v-chip>
                                         </span>
                                 </v-expansion-panel-title>
 
@@ -550,6 +554,14 @@
                                         :label="$t('$vuetify.dataIterator.i.model')" :items="defaultChoiceStore.model"
                                         v-model="chatbotStore.model" variant="outlined">
                                     </v-combobox>
+
+                                    <!-- ---------------------------------------------- -->
+                                    <!-- Conversation ID -->
+                                    <!-- ---------------------------------------------- -->
+                                    <v-text-field density='compact' class="px-2"
+                                        :label="$t('$vuetify.dataIterator.i.conversationId')"
+                                        v-model="chatbotStore.conversation_id" variant="outlined">
+                                    </v-text-field>
                                 </v-expansion-panel-text>
                             </v-expansion-panel>
 
@@ -1974,6 +1986,7 @@
                         url: "",
                         path: "/v1/chat/completions",
                         model: "llama-model",
+                        conversation_id: "default",
                         authPrefix: "Bearer",
                         contentType: "application/json",
                         max_tokens_type: "max_tokens",
@@ -2040,6 +2053,7 @@
                         const body = {
                             messages: agentStore.promptMessage(conversation),
                             model: chatbotStore.model,
+                            conversation_id: chatbotStore.conversation_id,
                             stream: chatbotStore.stream,
                         }
 
@@ -2483,6 +2497,7 @@
                             url: 'URL',
                             path: 'Path',
                             model: 'Model',
+                            conversationId: 'Conversation ID',
                             advanced: 'Advanced',
                             method: 'HTTP Method',
                             stream: 'Stream',
@@ -2520,6 +2535,7 @@
                             url: 'URL',
                             path: 'Path',
                             model: 'Modello',
+                            conversationId: 'ID Conversazione',
                             advanced: 'Configurazione Avanzata',
                             method: 'HTTP Metodo',
                             stream: 'Stream',
@@ -2553,6 +2569,7 @@
                             title: 'インターフェイス構成',
                             apikey: 'API キー',
                             endpoint: '端点',
+                            conversationId: '会話 ID',
                             contentType: 'コンテンツタイプ',
                             authPrefix: 'リクエストヘッダー',
                             configFile: 'プロファイル'
@@ -2583,6 +2600,7 @@
                             url: 'URL',
                             path: 'Sökväg',
                             model: 'Modell',
+                            conversationId: 'Konversations-ID',
                             stream: 'Strömma',
                             configFile: 'Konfigurationsfil'
                         },
@@ -2622,6 +2640,7 @@
                             url: '网址',
                             path: '路径',
                             model: '模型',
+                            conversationId: '会话 ID',
                             advanced: '高级配置',
                             method: 'HTTP 请求方法',
                             stream: '流式输出',
