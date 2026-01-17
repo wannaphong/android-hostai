@@ -163,7 +163,7 @@ class ApiServerService : Service() {
             this,
             0,
             intent,
-            PendingIntent.FLAG_IMMUTABLE
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         
         // Create stop action for notification
@@ -174,7 +174,7 @@ class ApiServerService : Service() {
             this,
             0,
             stopIntent,
-            PendingIntent.FLAG_IMMUTABLE
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         
         return NotificationCompat.Builder(this, CHANNEL_ID)
