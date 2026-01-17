@@ -10,6 +10,7 @@ import com.google.ai.edge.litertlm.EngineConfig
 import com.google.ai.edge.litertlm.Message
 import com.google.ai.edge.litertlm.MessageCallback
 import com.google.ai.edge.litertlm.SamplerConfig
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -55,6 +56,8 @@ class LlamaModel(private val contentResolver: ContentResolver) {
         private const val TAG = "LlamaModel"
         private const val DEFAULT_MAX_TOKENS = 2048
         private const val DEFAULT_SESSION_ID = "default"
+        // Delay between streaming token emissions (in milliseconds)
+        private const val TOKEN_EMISSION_DELAY_MS = 10L
     }
     
     fun loadModel(modelPath: String): Boolean {
@@ -301,7 +304,8 @@ class LlamaModel(private val contentResolver: ContentResolver) {
                 // Use suspendCancellableCoroutine to wait for async callback to complete
                 suspendCancellableCoroutine<Unit> { continuation ->
                     val resumed = AtomicBoolean(false)
-                    val streamingJob = AtomicBoolean(false)
+                    // Use CompletableDeferred to signal when streaming job completes
+                    val streamingCompleted = CompletableDeferred<Unit>()
                     
                     // Use MessageCallback for streaming
                     val callback = object : MessageCallback {
@@ -312,22 +316,27 @@ class LlamaModel(private val contentResolver: ContentResolver) {
                             
                             // Stream the response in chunks (word by word for better UX)
                             // This simulates token-level streaming when the library provides complete responses
-                            streamingJob.set(true)
                             scope.launch {
                                 try {
                                     // Split by whitespace to get word-like tokens
-                                    val tokens = fullText.split(Regex("(?<=\\s)|(?=\\s)")).filter { it.isNotEmpty() }
+                                    // We preserve spaces by splitting but not filtering empty strings from consecutive spaces
+                                    val words = fullText.split(" ")
                                     
-                                    for (token in tokens) {
-                                        onToken(token)
-                                        // Small delay between tokens to simulate natural streaming
-                                        // and prevent overwhelming the client
-                                        delay(10)
+                                    for ((index, word) in words.withIndex()) {
+                                        if (word.isNotEmpty()) {
+                                            // Add space after each word except the last
+                                            val token = if (index < words.size - 1) "$word " else word
+                                            onToken(token)
+                                            // Small delay between tokens to simulate natural streaming
+                                            // and prevent overwhelming the client
+                                            delay(TOKEN_EMISSION_DELAY_MS)
+                                        }
                                     }
                                 } catch (e: Exception) {
                                     LogManager.e(TAG, "Error during chunked streaming", e)
                                 } finally {
-                                    streamingJob.set(false)
+                                    // Signal that streaming is complete
+                                    streamingCompleted.complete(Unit)
                                 }
                             }
                         }
@@ -336,10 +345,8 @@ class LlamaModel(private val contentResolver: ContentResolver) {
                             LogManager.i(TAG, "Streaming completed for session '$sessionId'")
                             // Wait for streaming job to complete before resuming
                             scope.launch {
-                                // Wait until streaming job is done
-                                while (streamingJob.get()) {
-                                    delay(10)
-                                }
+                                // Await the streaming job completion
+                                streamingCompleted.await()
                                 // Resume the coroutine when streaming is done
                                 if (resumed.compareAndSet(false, true)) {
                                     continuation.resume(Unit)
@@ -350,6 +357,8 @@ class LlamaModel(private val contentResolver: ContentResolver) {
                         override fun onError(throwable: Throwable) {
                             Log.e(TAG, "Streaming error for session '$sessionId'", throwable)
                             LogManager.e(TAG, "Streaming error: ${throwable.message}", throwable)
+                            // Complete the deferred to unblock any waiters
+                            streamingCompleted.complete(Unit)
                             // Resume with exception on error
                             if (resumed.compareAndSet(false, true)) {
                                 continuation.resumeWithException(throwable)
