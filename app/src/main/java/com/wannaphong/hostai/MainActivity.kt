@@ -270,7 +270,7 @@ class MainActivity : AppCompatActivity() {
         
         if (isRunning) {
             binding.serverStatusText.text = getString(R.string.server_running)
-            binding.serverStatusText.setTextColor(ContextCompat.getColor(this, R.color.green))
+            binding.serverStatusText.setTextColor(ContextCompat.getColor(this, R.color.success))
             binding.startStopButton.text = getString(R.string.stop_server)
             
             val ipAddress = getLocalIpAddress()
@@ -292,7 +292,7 @@ class MainActivity : AppCompatActivity() {
             binding.selectModelButton.text = getString(R.string.change_model)
         } else {
             binding.serverStatusText.text = getString(R.string.server_stopped)
-            binding.serverStatusText.setTextColor(ContextCompat.getColor(this, R.color.red))
+            binding.serverStatusText.setTextColor(ContextCompat.getColor(this, R.color.error))
             binding.startStopButton.text = getString(R.string.start_server)
             
             binding.serverUrlDivider.visibility = View.GONE
