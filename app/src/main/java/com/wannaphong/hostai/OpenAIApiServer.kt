@@ -115,6 +115,42 @@ class OpenAIApiServer(
         }
     }
     
+    /**
+     * Get all stored completions
+     */
+    fun getStoredCompletions(): List<StoredCompletion> {
+        return storedCompletions.values.toList().sortedByDescending { it.created }
+    }
+    
+    /**
+     * Get a specific stored completion by ID
+     */
+    fun getStoredCompletionById(id: String): StoredCompletion? {
+        return storedCompletions[id]
+    }
+    
+    /**
+     * Clear all stored completions
+     */
+    fun clearAllStoredCompletions(): Int {
+        val count = storedCompletions.size
+        storedCompletions.clear()
+        LogManager.i(TAG, "Cleared $count stored completions")
+        return count
+    }
+    
+    /**
+     * Delete a specific stored completion
+     */
+    fun deleteStoredCompletion(id: String): Boolean {
+        val removed = storedCompletions.remove(id)
+        if (removed != null) {
+            LogManager.i(TAG, "Deleted stored completion: $id")
+            return true
+        }
+        return false
+    }
+    
     private fun handleHealth(ctx: JavalinContext) {
         LogManager.d(TAG, "Handling /health")
         
