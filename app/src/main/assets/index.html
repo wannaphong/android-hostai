@@ -525,7 +525,7 @@
                                             </v-chip>
 
                                             <v-chip label color="primary" class="ma-1">
-                                                {{chatbotStore.conversation_id || "default" }}
+                                                {{chatbotStore.conversation_id}}
                                             </v-chip>
                                         </span>
                                 </v-expansion-panel-title>
@@ -560,7 +560,8 @@
                                     <!-- ---------------------------------------------- -->
                                     <v-text-field density='compact' class="px-2"
                                         :label="$t('$vuetify.dataIterator.i.conversationId')"
-                                        v-model="chatbotStore.conversation_id" variant="outlined">
+                                        v-model="chatbotStore.conversation_id" variant="outlined"
+                                        :rules="[value => !!value || 'Conversation ID is required', value => /^[a-zA-Z0-9\-_.@]+$/.test(value) || 'Only letters, numbers, -, _, ., @ allowed']">
                                     </v-text-field>
                                 </v-expansion-panel-text>
                             </v-expansion-panel>
