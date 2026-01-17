@@ -10,8 +10,8 @@
     <string name="model_status">Model Status</string>
     <string name="model_not_loaded">No model loaded</string>
     <string name="model_loaded">Model loaded: %s</string>
-    <string name="select_model">Select GGUF Model</string>
-    <string name="change_model">Change GGUF Model</string>
+    <string name="select_model">Select LiteRTLM Model</string>
+    <string name="change_model">Change LiteRTLM Model</string>
     <string name="model_selected">Model selected: %s</string>
     <string name="no_model_selected">No model file selected</string>
     <string name="server_stopped_to_change_model">Server stopped. Select a new model to restart.</string>
