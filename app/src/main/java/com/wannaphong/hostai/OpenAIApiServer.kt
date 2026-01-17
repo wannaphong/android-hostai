@@ -392,9 +392,9 @@ class OpenAIApiServer(
             LogManager.d(TAG, "Chat completion - stream: $stream, maxTokens: ${config.maxTokens}, temp: ${config.temperature}")
             
             if (stream) {
-                handleChatStreamingResponse(ctx, prompt, config, sessionId, messages, store, metadata)
+                handleChatStreamingResponse(ctx, prompt, config, sessionId, messages, store, metadata, bodyText)
             } else {
-                handleChatNonStreamingResponse(ctx, prompt, config, sessionId, messages, store, metadata)
+                handleChatNonStreamingResponse(ctx, prompt, config, sessionId, messages, store, metadata, bodyText)
             }
         } catch (e: Exception) {
             LogManager.e(TAG, "Error handling chat completions", e)
@@ -412,7 +412,8 @@ class OpenAIApiServer(
         sessionId: String,
         messages: com.google.gson.JsonArray,
         store: Boolean,
-        metadata: Map<String, Any>?
+        metadata: Map<String, Any>?,
+        bodyText: String
     ) {
         // Generate response with session ID
         val completion = model.generate(prompt, config, sessionId)
@@ -474,8 +475,7 @@ class OpenAIApiServer(
         val responseJson = gson.toJson(response)
         
         // Log request if logging is enabled
-        val requestBody = messages.toString()
-        logRequestIfEnabled(ctx, "/v1/chat/completions", requestBody, responseJson)
+        logRequestIfEnabled(ctx, "/v1/chat/completions", bodyText, responseJson)
         
         ctx.contentType("application/json").result(responseJson)
     }
@@ -487,7 +487,8 @@ class OpenAIApiServer(
         sessionId: String,
         messages: com.google.gson.JsonArray,
         store: Boolean,
-        metadata: Map<String, Any>?
+        metadata: Map<String, Any>?,
+        bodyText: String
     ) {
         LogManager.i(TAG, "Starting chat streaming response for session: $sessionId")
         

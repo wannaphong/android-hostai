@@ -7,7 +7,6 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
 import com.wannaphong.hostai.databinding.ActivitySettingsBinding
-import java.util.Locale
 
 class SettingsActivity : AppCompatActivity() {
     
