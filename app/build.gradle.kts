@@ -54,9 +54,8 @@ dependencies {
     implementation("com.google.android.material:material:1.11.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     
-    // Ktor Server for web server with SSE support
-    implementation("io.ktor:ktor-server-core:2.3.7")
-    implementation("io.ktor:ktor-server-cio:2.3.7")
+    // NanoHTTPD for lightweight HTTP server
+    implementation("org.nanohttpd:nanohttpd:2.3.1")
     
     // Gson for JSON parsing
     implementation("com.google.code.gson:gson:2.10.1")
