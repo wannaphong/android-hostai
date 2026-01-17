@@ -356,6 +356,8 @@ class OpenAIApiServer(
             }
             
             // Wait for streaming to complete
+            // Using runBlocking is necessary here because Javalin handlers are not suspend functions
+            // Blocking is acceptable for streaming responses as we need to keep the connection open
             if (job != null) {
                 runBlocking { job.join() }
             } else {
@@ -403,13 +405,8 @@ class OpenAIApiServer(
             LogManager.i(TAG, "Chat streaming completed with $tokenCount tokens")
         } catch (e: Exception) {
             LogManager.e(TAG, "Error in chat streaming", e)
-        } finally {
-            try {
-                outputStream.close()
-            } catch (e: Exception) {
-                // Ignore
-            }
         }
+        // Note: Javalin manages the output stream lifecycle; don't close it manually
     }
     
     private fun handleCompletions(ctx: JavalinContext) {
@@ -539,6 +536,8 @@ class OpenAIApiServer(
             }
             
             // Wait for streaming to complete
+            // Using runBlocking is necessary here because Javalin handlers are not suspend functions
+            // Blocking is acceptable for streaming responses as we need to keep the connection open
             if (job != null) {
                 runBlocking { job.join() }
             } else {
@@ -584,13 +583,8 @@ class OpenAIApiServer(
             LogManager.i(TAG, "Completion streaming completed with $tokenCount tokens")
         } catch (e: Exception) {
             LogManager.e(TAG, "Error in completion streaming", e)
-        } finally {
-            try {
-                outputStream.close()
-            } catch (e: Exception) {
-                // Ignore
-            }
         }
+        // Note: Javalin manages the output stream lifecycle; don't close it manually
     }
     
     private fun buildPromptFromMessages(messages: com.google.gson.JsonArray): String {
