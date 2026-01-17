@@ -25,7 +25,6 @@ class SettingsActivity : AppCompatActivity() {
         supportActionBar?.title = getString(R.string.settings)
         
         settingsManager = SettingsManager(this)
-        requestLogger = RequestLogger(this)
         
         loadSettings()
         setupUI()
