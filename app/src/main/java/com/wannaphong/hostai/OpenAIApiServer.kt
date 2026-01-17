@@ -291,24 +291,7 @@ class OpenAIApiServer(
             val messages = request.getAsJsonArray("messages")
             val stream = request.get("stream")?.asBoolean ?: false
             val store = request.get("store")?.asBoolean ?: false
-            val metadata = request.get("metadata")?.asJsonObject?.let { meta ->
-                meta.entrySet().associate { entry ->
-                    val value: Any = when {
-                        entry.value.isJsonPrimitive -> {
-                            val primitive = entry.value.asJsonPrimitive
-                            when {
-                                primitive.isBoolean -> primitive.asBoolean
-                                primitive.isNumber -> primitive.asNumber
-                                primitive.isString -> primitive.asString
-                                else -> primitive.asString
-                            }
-                        }
-                        entry.value.isJsonNull -> "null"
-                        else -> entry.value.toString()
-                    }
-                    entry.key to value
-                }
-            }
+            val metadata = parseMetadata(request.get("metadata")?.asJsonObject)
             
             // Extract session ID using helper method
             val sessionId = extractSessionId(ctx, request)
@@ -821,6 +804,31 @@ class OpenAIApiServer(
     }
     
     /**
+     * Helper function to parse metadata from JsonObject to Map<String, Any>
+     * Properly converts JsonElement to Kotlin types for correct serialization
+     */
+    private fun parseMetadata(metadataJson: com.google.gson.JsonObject?): Map<String, Any>? {
+        return metadataJson?.let { meta ->
+            meta.entrySet().associate { entry ->
+                val value: Any = when {
+                    entry.value.isJsonPrimitive -> {
+                        val primitive = entry.value.asJsonPrimitive
+                        when {
+                            primitive.isBoolean -> primitive.asBoolean
+                            primitive.isNumber -> primitive.asNumber
+                            primitive.isString -> primitive.asString
+                            else -> primitive.asString
+                        }
+                    }
+                    entry.value.isJsonNull -> "null"
+                    else -> entry.value.toString()
+                }
+                entry.key to value
+            }
+        }
+    }
+    
+    /**
      * Helper function to get all messages including the assistant response
      */
     private fun getAllMessages(storedCompletion: StoredCompletion): List<Map<String, String>> {
@@ -963,24 +971,7 @@ class OpenAIApiServer(
             val request = gson.fromJson(bodyText, JsonObject::class.java)
             
             // Extract metadata from request
-            val newMetadata = request.get("metadata")?.asJsonObject?.let { meta ->
-                meta.entrySet().associate { entry ->
-                    val value: Any = when {
-                        entry.value.isJsonPrimitive -> {
-                            val primitive = entry.value.asJsonPrimitive
-                            when {
-                                primitive.isBoolean -> primitive.asBoolean
-                                primitive.isNumber -> primitive.asNumber
-                                primitive.isString -> primitive.asString
-                                else -> primitive.asString
-                            }
-                        }
-                        entry.value.isJsonNull -> "null"
-                        else -> entry.value.toString()
-                    }
-                    entry.key to value
-                }
-            }
+            val newMetadata = parseMetadata(request.get("metadata")?.asJsonObject)
             
             if (newMetadata == null) {
                 val errorResponse = mapOf(
