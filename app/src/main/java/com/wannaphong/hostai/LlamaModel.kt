@@ -122,14 +122,14 @@ class LlamaModel(private val contentResolver: ContentResolver) {
     
     /**
      * Get or create a conversation for the given session ID.
-     * Thread-safe atomic operation.
+     * Thread-safe atomic operation using computeIfAbsent.
      * @param sessionId Unique identifier for the conversation session
      * @param config Sampler configuration for the conversation
-     * @return The conversation instance
+     * @return The conversation instance, or null if creation fails
      */
     private fun getOrCreateConversation(sessionId: String, config: GenerationConfig): Conversation? {
-        return conversations.computeIfAbsent(sessionId) { _ ->
-            try {
+        return try {
+            conversations.computeIfAbsent(sessionId) { _ ->
                 val currentEngine = engine ?: throw IllegalStateException("Engine is not initialized")
                 
                 val samplerConfig = SamplerConfig(
@@ -139,21 +139,16 @@ class LlamaModel(private val contentResolver: ContentResolver) {
                 )
                 val newConversation = currentEngine.createConversation(
                     ConversationConfig(samplerConfig = samplerConfig)
-                )
+                ) ?: throw IllegalStateException("createConversation returned null")
                 
-                if (newConversation != null) {
-                    LogManager.i(TAG, "Created new conversation for session: $sessionId")
-                    newConversation
-                } else {
-                    LogManager.e(TAG, "Failed to create conversation: createConversation returned null")
-                    throw IllegalStateException("Failed to create conversation")
-                }
-            } catch (e: Exception) {
-                LogManager.e(TAG, "Failed to create conversation for session $sessionId", e)
-                // Remove the failed entry to allow retry
-                conversations.remove(sessionId)
-                throw e
+                LogManager.i(TAG, "Created new conversation for session: $sessionId")
+                newConversation
             }
+        } catch (e: Exception) {
+            LogManager.e(TAG, "Failed to create conversation for session $sessionId", e)
+            // Note: computeIfAbsent won't insert the key if the function throws an exception
+            // So we don't need to remove anything - the map remains unchanged
+            null
         }
     }
     
