@@ -270,13 +270,14 @@ class MainActivity : AppCompatActivity() {
         
         if (isRunning) {
             binding.serverStatusText.text = getString(R.string.server_running)
-            binding.serverStatusText.setTextColor(ContextCompat.getColor(this, R.color.green))
+            binding.serverStatusText.setTextColor(ContextCompat.getColor(this, R.color.success))
             binding.startStopButton.text = getString(R.string.stop_server)
             
             val ipAddress = getLocalIpAddress()
             val port = apiServerService?.getServerPort() ?: ApiServerService.DEFAULT_PORT
             val serverUrl = "http://$ipAddress:$port"
             
+            binding.serverUrlDivider.visibility = View.VISIBLE
             binding.serverUrlLabel.visibility = View.VISIBLE
             binding.serverUrlText.visibility = View.VISIBLE
             binding.serverUrlText.text = serverUrl
@@ -291,9 +292,10 @@ class MainActivity : AppCompatActivity() {
             binding.selectModelButton.text = getString(R.string.change_model)
         } else {
             binding.serverStatusText.text = getString(R.string.server_stopped)
-            binding.serverStatusText.setTextColor(ContextCompat.getColor(this, R.color.red))
+            binding.serverStatusText.setTextColor(ContextCompat.getColor(this, R.color.error))
             binding.startStopButton.text = getString(R.string.start_server)
             
+            binding.serverUrlDivider.visibility = View.GONE
             binding.serverUrlLabel.visibility = View.GONE
             binding.serverUrlText.visibility = View.GONE
             binding.copyUrlButton.visibility = View.GONE

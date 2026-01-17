@@ -3,15 +3,18 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_margin="8dp"
+    android:layout_marginStart="8dp"
+    android:layout_marginEnd="8dp"
+    android:layout_marginTop="8dp"
+    android:layout_marginBottom="8dp"
     app:cardElevation="2dp"
-    app:cardCornerRadius="8dp">
+    app:cardCornerRadius="16dp">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="16dp">
+        android:padding="20dp">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -23,7 +26,8 @@
                 android:id="@+id/modelRadioButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginEnd="12dp" />
+                android:layout_marginEnd="16dp"
+                android:buttonTint="?attr/colorPrimary" />
 
             <LinearLayout
                 android:layout_width="0dp"
@@ -36,19 +40,22 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="model.litertlm"
-                    android:textSize="16sp"
+                    android:textSize="17sp"
                     android:textStyle="bold"
-                    android:textColor="?attr/colorOnSurface" />
+                    android:textColor="?attr/colorOnSurface"
+                    android:fontFamily="sans-serif-medium"
+                    android:maxLines="2"
+                    android:ellipsize="end" />
 
                 <TextView
                     android:id="@+id/modelSizeText"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Size: 1.5 GB"
-                    android:textSize="13sp"
+                    android:textSize="14sp"
                     android:textColor="?attr/colorOnSurface"
-                    android:alpha="0.7"
-                    android:layout_marginTop="4dp" />
+                    android:alpha="0.65"
+                    android:layout_marginTop="6dp" />
 
                 <TextView
                     android:id="@+id/modelDateText"
@@ -57,8 +64,8 @@
                     android:text="Added: 2024-01-15"
                     android:textSize="13sp"
                     android:textColor="?attr/colorOnSurface"
-                    android:alpha="0.7"
-                    android:layout_marginTop="2dp" />
+                    android:alpha="0.55"
+                    android:layout_marginTop="4dp" />
             </LinearLayout>
         </LinearLayout>
 
@@ -66,25 +73,27 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:layout_marginTop="12dp">
+            android:layout_marginTop="16dp">
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/viewModelButton"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
+                android:layout_height="48dp"
                 android:layout_weight="1"
                 android:text="@string/view"
-                android:layout_marginEnd="4dp"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
+                android:textSize="14sp"
+                android:layout_marginEnd="8dp"
+                style="@style/Widget.HostAI.Button.Outlined" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/deleteModelButton"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
+                android:layout_height="48dp"
                 android:layout_weight="1"
                 android:text="@string/delete"
-                android:layout_marginStart="4dp"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
+                android:textSize="14sp"
+                android:layout_marginStart="8dp"
+                style="@style/Widget.HostAI.Button.Outlined" />
         </LinearLayout>
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>
