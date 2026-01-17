@@ -43,6 +43,12 @@
             android:label="Application Logs"
             android:parentActivityName=".MainActivity" />
 
+        <activity
+            android:name=".StoredCompletionsActivity"
+            android:exported="false"
+            android:label="@string/stored_completions_title"
+            android:parentActivityName=".MainActivity" />
+
         <service
             android:name=".ApiServerService"
             android:enabled="true"

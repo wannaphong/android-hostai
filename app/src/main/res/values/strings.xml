@@ -31,4 +31,11 @@
     <string name="copy_logs">Copy Logs</string>
     <string name="clear_logs">Clear</string>
     <string name="notification_permission_required">Notification permission is required to run the server in the background</string>
+    <string name="stored_completions_title">Stored Completions</string>
+    <string name="no_stored_completions">No stored completions</string>
+    <string name="export_all">Export All</string>
+    <string name="clear_all">Clear All</string>
+    <string name="export">Export</string>
+    <string name="delete">Delete</string>
+    <string name="manage_completions">Manage Completions</string>
 </resources>

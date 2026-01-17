@@ -183,7 +183,165 @@ curl http://<phone-ip>:8080/v1/chat/completions \
 ```
 
 
-### 3. Text Completions
+### 3. Stored Chat Completions
+
+HostAI supports storing chat completions for later retrieval by setting the `store` parameter to `true`. This allows you to persist completions and their metadata.
+
+#### Store a Chat Completion
+
+Set `store=true` when creating a chat completion to store it:
+
+```bash
+curl http://<phone-ip>:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "llama-mock-model",
+    "messages": [
+      {"role": "user", "content": "What is the capital of France?"}
+    ],
+    "store": true,
+    "metadata": {
+      "user_id": "12345",
+      "session": "chat-session-1"
+    }
+  }'
+```
+
+**Response:**
+```json
+{
+  "id": "chatcmpl-1705384800123",
+  "object": "chat.completion",
+  "created": 1705384800,
+  "model": "llama-mock-model",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "The capital of France is Paris."
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 20,
+    "completion_tokens": 15,
+    "total_tokens": 35
+  }
+}
+```
+
+**Note:** Save the `id` field (e.g., `chatcmpl-1705384800123`) to retrieve or update the completion later.
+
+#### Get a Stored Completion
+
+Retrieve a stored chat completion by its ID:
+
+```bash
+curl http://<phone-ip>:8080/v1/chat/completions/chatcmpl-1705384800123
+```
+
+**Response:**
+```json
+{
+  "id": "chatcmpl-1705384800123",
+  "object": "chat.completion",
+  "created": 1705384800,
+  "model": "llama-mock-model",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "The capital of France is Paris."
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "metadata": {
+    "user_id": "12345",
+    "session": "chat-session-1"
+  }
+}
+```
+
+#### Get Messages from a Stored Completion
+
+Get all messages (including the assistant's response) from a stored completion:
+
+```bash
+curl http://<phone-ip>:8080/v1/chat/completions/chatcmpl-1705384800123/messages
+```
+
+**Response:**
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "chatcmpl-1705384800123-msg-0",
+      "object": "chat.completion.message",
+      "created": 1705384800,
+      "role": "user",
+      "content": "What is the capital of France?"
+    },
+    {
+      "id": "chatcmpl-1705384800123-msg-1",
+      "object": "chat.completion.message",
+      "created": 1705384800,
+      "role": "assistant",
+      "content": "The capital of France is Paris."
+    }
+  ]
+}
+```
+
+#### Update Completion Metadata
+
+Update the metadata for a stored completion:
+
+```bash
+curl -X POST http://<phone-ip>:8080/v1/chat/completions/chatcmpl-1705384800123 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "metadata": {
+      "user_id": "12345",
+      "session": "chat-session-1",
+      "rating": "5",
+      "reviewed": true
+    }
+  }'
+```
+
+**Response:**
+```json
+{
+  "id": "chatcmpl-1705384800123",
+  "object": "chat.completion",
+  "created": 1705384800,
+  "model": "llama-mock-model",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "The capital of France is Paris."
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "metadata": {
+    "user_id": "12345",
+    "session": "chat-session-1",
+    "rating": "5",
+    "reviewed": true
+  }
+}
+```
+
+
+### 4. Text Completions
 
 Generate text completions.
 
@@ -250,7 +408,7 @@ data: [DONE]
 ```
 
 
-### 4. Session Management
+### 5. Session Management
 
 Manage conversation sessions.
 
@@ -319,7 +477,7 @@ curl -X DELETE http://<phone-ip>:8080/v1/sessions
 ```
 
 
-### 5. Health Check
+### 6. Health Check
 
 Check if the server is running.
 

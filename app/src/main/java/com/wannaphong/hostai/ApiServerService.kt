@@ -155,6 +155,8 @@ class ApiServerService : Service() {
     
     fun getLoadedModel(): LlamaModel? = model
     
+    fun getApiServer(): OpenAIApiServer? = apiServer
+    
     private fun createNotification(port: Int): Notification {
         val intent = Intent(this, MainActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(

@@ -121,6 +121,10 @@ class MainActivity : AppCompatActivity() {
             openLogViewer()
         }
         
+        binding.manageCompletionsButton.setOnClickListener {
+            openStoredCompletions()
+        }
+        
         binding.exitButton.setOnClickListener {
             exitApp()
         }
@@ -365,6 +369,11 @@ class MainActivity : AppCompatActivity() {
     
     private fun openLogViewer() {
         val intent = Intent(this, LogViewerActivity::class.java)
+        startActivity(intent)
+    }
+    
+    private fun openStoredCompletions() {
+        val intent = Intent(this, StoredCompletionsActivity::class.java)
         startActivity(intent)
     }
     

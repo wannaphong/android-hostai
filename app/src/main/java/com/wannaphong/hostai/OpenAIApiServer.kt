@@ -8,6 +8,20 @@ import io.javalin.Javalin
 import io.javalin.http.Context as JavalinContext
 import kotlinx.coroutines.*
 import java.io.IOException
+import java.util.concurrent.ConcurrentHashMap
+
+/**
+ * Data class to store chat completion information.
+ */
+data class StoredCompletion(
+    val id: String,
+    val obj: String,
+    val created: Long,
+    val model: String,
+    val messages: List<Map<String, String>>,
+    val responseContent: String,
+    var metadata: Map<String, Any>?
+)
 
 /**
  * OpenAI-compatible API server implementation using Javalin.
@@ -32,6 +46,9 @@ class OpenAIApiServer(
     
     private var app: Javalin? = null
     
+    // Storage for chat completions with store=true
+    private val storedCompletions = ConcurrentHashMap<String, StoredCompletion>()
+    
     companion object {
         private const val TAG = "OpenAIApiServer"
         // Maximum request body size (10 MB) to prevent memory exhaustion attacks
@@ -55,6 +72,11 @@ class OpenAIApiServer(
                 // Completion endpoints
                 post("/v1/chat/completions") { ctx -> handleChatCompletions(ctx) }
                 post("/v1/completions") { ctx -> handleCompletions(ctx) }
+                
+                // Stored chat completions endpoints
+                get("/v1/chat/completions/{completion_id}") { ctx -> handleGetStoredCompletion(ctx) }
+                get("/v1/chat/completions/{completion_id}/messages") { ctx -> handleGetStoredCompletionMessages(ctx) }
+                post("/v1/chat/completions/{completion_id}") { ctx -> handleUpdateStoredCompletion(ctx) }
                 
                 // Session management endpoints
                 get("/v1/sessions") { ctx -> handleListSessions(ctx) }
@@ -91,6 +113,42 @@ class OpenAIApiServer(
         } catch (e: Exception) {
             LogManager.e(TAG, "Error stopping server", e)
         }
+    }
+    
+    /**
+     * Get all stored completions
+     */
+    fun getStoredCompletions(): List<StoredCompletion> {
+        return storedCompletions.values.toList().sortedByDescending { it.created }
+    }
+    
+    /**
+     * Get a specific stored completion by ID
+     */
+    fun getStoredCompletionById(id: String): StoredCompletion? {
+        return storedCompletions[id]
+    }
+    
+    /**
+     * Clear all stored completions
+     */
+    fun clearAllStoredCompletions(): Int {
+        val count = storedCompletions.size
+        storedCompletions.clear()
+        LogManager.i(TAG, "Cleared $count stored completions")
+        return count
+    }
+    
+    /**
+     * Delete a specific stored completion
+     */
+    fun deleteStoredCompletion(id: String): Boolean {
+        val removed = storedCompletions.remove(id)
+        if (removed != null) {
+            LogManager.i(TAG, "Deleted stored completion: $id")
+            return true
+        }
+        return false
     }
     
     private fun handleHealth(ctx: JavalinContext) {
@@ -150,7 +208,20 @@ class OpenAIApiServer(
                 <div class="endpoint">
                     <strong>POST /v1/chat/completions</strong><br>
                     Chat completion endpoint (OpenAI compatible)<br>
-                    <em>Supports multi-session via: conversation_id, user, session_id fields or X-Session-ID header</em>
+                    <em>Supports multi-session via: conversation_id, user, session_id fields or X-Session-ID header</em><br>
+                    <em>Set store=true to persist completion for later retrieval</em>
+                </div>
+                <div class="endpoint">
+                    <strong>GET /v1/chat/completions/{completion_id}</strong><br>
+                    Get a stored chat completion (only for completions with store=true)
+                </div>
+                <div class="endpoint">
+                    <strong>GET /v1/chat/completions/{completion_id}/messages</strong><br>
+                    Get messages from a stored chat completion
+                </div>
+                <div class="endpoint">
+                    <strong>POST /v1/chat/completions/{completion_id}</strong><br>
+                    Update metadata for a stored chat completion
                 </div>
                 <div class="endpoint">
                     <strong>POST /v1/completions</strong><br>
@@ -255,11 +326,13 @@ class OpenAIApiServer(
             // Extract parameters
             val messages = request.getAsJsonArray("messages")
             val stream = request.get("stream")?.asBoolean ?: false
+            val store = request.get("store")?.asBoolean ?: false
+            val metadata = parseMetadata(request.get("metadata")?.asJsonObject)
             
             // Extract session ID using helper method
             val sessionId = extractSessionId(ctx, request)
             
-            LogManager.d(TAG, "Using session ID: $sessionId")
+            LogManager.d(TAG, "Using session ID: $sessionId, store: $store")
             
             // Build generation config from request parameters
             val config = extractGenerationConfig(request)
@@ -273,9 +346,9 @@ class OpenAIApiServer(
             LogManager.d(TAG, "Chat completion - stream: $stream, maxTokens: ${config.maxTokens}, temp: ${config.temperature}")
             
             if (stream) {
-                handleChatStreamingResponse(ctx, prompt, config, sessionId)
+                handleChatStreamingResponse(ctx, prompt, config, sessionId, messages, store, metadata)
             } else {
-                handleChatNonStreamingResponse(ctx, prompt, config, sessionId)
+                handleChatNonStreamingResponse(ctx, prompt, config, sessionId, messages, store, metadata)
             }
         } catch (e: Exception) {
             LogManager.e(TAG, "Error handling chat completions", e)
@@ -290,7 +363,10 @@ class OpenAIApiServer(
         ctx: JavalinContext,
         prompt: String,
         config: GenerationConfig,
-        sessionId: String
+        sessionId: String,
+        messages: com.google.gson.JsonArray,
+        store: Boolean,
+        metadata: Map<String, Any>?
     ) {
         // Generate response with session ID
         val completion = model.generate(prompt, config, sessionId)
@@ -298,10 +374,37 @@ class OpenAIApiServer(
         val promptTokens = prompt.split(" ").size
         val completionTokens = completion.split(" ").size
         
+        val id = "chatcmpl-${System.currentTimeMillis()}"
+        val created = System.currentTimeMillis() / 1000
+        
+        // Store completion if store parameter is true
+        if (store) {
+            val messagesList = messages.map { element ->
+                val msgObj = element.asJsonObject
+                mapOf(
+                    "role" to (msgObj.get("role")?.asString ?: ""),
+                    "content" to (msgObj.get("content")?.asString ?: "")
+                )
+            }
+            
+            val storedCompletion = StoredCompletion(
+                id = id,
+                obj = "chat.completion",
+                created = created,
+                model = model.getModelName(),
+                messages = messagesList,
+                responseContent = completion,
+                metadata = metadata
+            )
+            
+            storedCompletions[id] = storedCompletion
+            LogManager.i(TAG, "Stored completion with ID: $id")
+        }
+        
         val response = mapOf(
-            "id" to "chatcmpl-${System.currentTimeMillis()}",
+            "id" to id,
             "object" to "chat.completion",
-            "created" to System.currentTimeMillis() / 1000,
+            "created" to created,
             "model" to model.getModelName(),
             "choices" to listOf(
                 mapOf(
@@ -329,9 +432,18 @@ class OpenAIApiServer(
         ctx: JavalinContext,
         prompt: String,
         config: GenerationConfig,
-        sessionId: String
+        sessionId: String,
+        messages: com.google.gson.JsonArray,
+        store: Boolean,
+        metadata: Map<String, Any>?
     ) {
         LogManager.i(TAG, "Starting chat streaming response for session: $sessionId")
+        
+        // Note: Storing streaming completions is not supported in this implementation
+        // as it requires buffering the entire response before streaming
+        if (store) {
+            LogManager.w(TAG, "Store parameter is not supported with streaming responses")
+        }
         
         val id = "chatcmpl-${System.currentTimeMillis()}"
         val created = System.currentTimeMillis() / 1000
@@ -722,6 +834,219 @@ class OpenAIApiServer(
             LogManager.e(TAG, "Error clearing all sessions", e)
             val errorResponse = mapOf(
                 "error" to mapOf("message" to (e.message ?: "Failed to clear sessions"))
+            )
+            ctx.status(500).contentType("application/json").result(gson.toJson(errorResponse))
+        }
+    }
+    
+    /**
+     * Helper function to parse metadata from JsonObject to Map<String, Any>
+     * Properly converts JsonElement to Kotlin types for correct serialization
+     */
+    private fun parseMetadata(metadataJson: com.google.gson.JsonObject?): Map<String, Any>? {
+        return metadataJson?.let { meta ->
+            meta.entrySet().associate { entry ->
+                val value: Any = when {
+                    entry.value.isJsonPrimitive -> {
+                        val primitive = entry.value.asJsonPrimitive
+                        when {
+                            primitive.isBoolean -> primitive.asBoolean
+                            primitive.isNumber -> primitive.asNumber
+                            primitive.isString -> primitive.asString
+                            else -> primitive.asString
+                        }
+                    }
+                    entry.value.isJsonNull -> "null"
+                    else -> entry.value.toString()
+                }
+                entry.key to value
+            }
+        }
+    }
+    
+    /**
+     * Helper function to get all messages including the assistant response
+     */
+    private fun getAllMessages(storedCompletion: StoredCompletion): List<Map<String, String>> {
+        val allMessages = storedCompletion.messages.toMutableList()
+        allMessages.add(mapOf(
+            "role" to "assistant",
+            "content" to storedCompletion.responseContent
+        ))
+        return allMessages
+    }
+    
+    /**
+     * Handle GET /v1/chat/completions/{completion_id}
+     * Get a stored chat completion. Only completions created with store=true are returned.
+     */
+    private fun handleGetStoredCompletion(ctx: JavalinContext) {
+        val completionId = ctx.pathParam("completion_id")
+        LogManager.d(TAG, "Handling GET /v1/chat/completions/$completionId")
+        
+        try {
+            val storedCompletion = storedCompletions[completionId]
+            
+            if (storedCompletion == null) {
+                val errorResponse = mapOf(
+                    "error" to mapOf(
+                        "message" to "Completion not found: $completionId",
+                        "type" to "invalid_request_error"
+                    )
+                )
+                ctx.status(404).contentType("application/json").result(gson.toJson(errorResponse))
+                return
+            }
+            
+            // Use helper function to get all messages
+            val allMessages = getAllMessages(storedCompletion)
+            
+            val response = mutableMapOf<String, Any>(
+                "id" to storedCompletion.id,
+                "object" to storedCompletion.obj,
+                "created" to storedCompletion.created,
+                "model" to storedCompletion.model,
+                "choices" to listOf(
+                    mapOf(
+                        "index" to 0,
+                        "message" to mapOf(
+                            "role" to "assistant",
+                            "content" to storedCompletion.responseContent
+                        ),
+                        "finish_reason" to "stop"
+                    )
+                )
+            )
+            
+            // Add metadata if present
+            storedCompletion.metadata?.let { response["metadata"] = it }
+            
+            LogManager.i(TAG, "Retrieved stored completion: $completionId")
+            ctx.contentType("application/json").result(gson.toJson(response))
+        } catch (e: Exception) {
+            LogManager.e(TAG, "Error retrieving stored completion $completionId", e)
+            val errorResponse = mapOf(
+                "error" to mapOf("message" to (e.message ?: "Failed to retrieve completion"))
+            )
+            ctx.status(500).contentType("application/json").result(gson.toJson(errorResponse))
+        }
+    }
+    
+    /**
+     * Handle GET /v1/chat/completions/{completion_id}/messages
+     * Get the messages in a stored chat completion.
+     */
+    private fun handleGetStoredCompletionMessages(ctx: JavalinContext) {
+        val completionId = ctx.pathParam("completion_id")
+        LogManager.d(TAG, "Handling GET /v1/chat/completions/$completionId/messages")
+        
+        try {
+            val storedCompletion = storedCompletions[completionId]
+            
+            if (storedCompletion == null) {
+                val errorResponse = mapOf(
+                    "error" to mapOf(
+                        "message" to "Completion not found: $completionId",
+                        "type" to "invalid_request_error"
+                    )
+                )
+                ctx.status(404).contentType("application/json").result(gson.toJson(errorResponse))
+                return
+            }
+            
+            // Use helper function to get all messages
+            val allMessages = getAllMessages(storedCompletion)
+            
+            val response = mapOf(
+                "object" to "list",
+                "data" to allMessages.mapIndexed { index, msg ->
+                    mapOf(
+                        "id" to "$completionId-msg-$index",
+                        "object" to "chat.completion.message",
+                        "created" to storedCompletion.created,
+                        "role" to msg["role"],
+                        "content" to msg["content"]
+                    )
+                }
+            )
+            
+            LogManager.i(TAG, "Retrieved messages for completion: $completionId")
+            ctx.contentType("application/json").result(gson.toJson(response))
+        } catch (e: Exception) {
+            LogManager.e(TAG, "Error retrieving messages for completion $completionId", e)
+            val errorResponse = mapOf(
+                "error" to mapOf("message" to (e.message ?: "Failed to retrieve messages"))
+            )
+            ctx.status(500).contentType("application/json").result(gson.toJson(errorResponse))
+        }
+    }
+    
+    /**
+     * Handle POST /v1/chat/completions/{completion_id}
+     * Update a stored chat completion. Only metadata updates are supported.
+     */
+    private fun handleUpdateStoredCompletion(ctx: JavalinContext) {
+        val completionId = ctx.pathParam("completion_id")
+        LogManager.d(TAG, "Handling POST /v1/chat/completions/$completionId")
+        
+        try {
+            val storedCompletion = storedCompletions[completionId]
+            
+            if (storedCompletion == null) {
+                val errorResponse = mapOf(
+                    "error" to mapOf(
+                        "message" to "Completion not found: $completionId",
+                        "type" to "invalid_request_error"
+                    )
+                )
+                ctx.status(404).contentType("application/json").result(gson.toJson(errorResponse))
+                return
+            }
+            
+            val bodyText = ctx.body()
+            val request = gson.fromJson(bodyText, JsonObject::class.java)
+            
+            // Extract metadata from request
+            val newMetadata = parseMetadata(request.get("metadata")?.asJsonObject)
+            
+            if (newMetadata == null) {
+                val errorResponse = mapOf(
+                    "error" to mapOf(
+                        "message" to "metadata field is required",
+                        "type" to "invalid_request_error"
+                    )
+                )
+                ctx.status(400).contentType("application/json").result(gson.toJson(errorResponse))
+                return
+            }
+            
+            // Update metadata
+            storedCompletion.metadata = newMetadata
+            
+            val response = mutableMapOf<String, Any>(
+                "id" to storedCompletion.id,
+                "object" to storedCompletion.obj,
+                "created" to storedCompletion.created,
+                "model" to storedCompletion.model,
+                "choices" to listOf(
+                    mapOf(
+                        "index" to 0,
+                        "message" to mapOf(
+                            "role" to "assistant",
+                            "content" to storedCompletion.responseContent
+                        ),
+                        "finish_reason" to "stop"
+                    )
+                ),
+                "metadata" to newMetadata
+            )
+            
+            LogManager.i(TAG, "Updated metadata for completion: $completionId")
+            ctx.contentType("application/json").result(gson.toJson(response))
+        } catch (e: Exception) {
+            LogManager.e(TAG, "Error updating completion $completionId", e)
+            val errorResponse = mapOf(
+                "error" to mapOf("message" to (e.message ?: "Failed to update completion"))
             )
             ctx.status(500).contentType("application/json").result(gson.toJson(errorResponse))
         }
