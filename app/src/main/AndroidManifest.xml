@@ -49,6 +49,12 @@
             android:label="@string/stored_completions_title"
             android:parentActivityName=".MainActivity" />
 
+        <activity
+            android:name=".ModelManagementActivity"
+            android:exported="false"
+            android:label="@string/model_management"
+            android:parentActivityName=".MainActivity" />
+
         <service
             android:name=".ApiServerService"
             android:enabled="true"

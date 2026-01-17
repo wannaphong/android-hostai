@@ -42,6 +42,7 @@ class MainActivity : AppCompatActivity() {
     private var selectedModelPath: String? = null
     private var selectedModelName: String? = null
     private var wasServerRunningBeforeModelChange = false
+    private lateinit var modelManager: ModelManager
     
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
@@ -87,6 +88,9 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
         
+        modelManager = ModelManager(this)
+        loadSelectedModelFromManager()
+        
         setupUI()
         bindToService()
     }
@@ -125,11 +129,42 @@ class MainActivity : AppCompatActivity() {
             openStoredCompletions()
         }
         
+        binding.manageModelsButton.setOnClickListener {
+            openModelManagement()
+        }
+        
         binding.exitButton.setOnClickListener {
             exitApp()
         }
         
         updateUI()
+    }
+    
+    private fun loadSelectedModelFromManager() {
+        val selectedModel = modelManager.getSelectedModel()
+        if (selectedModel != null) {
+            selectedModelPath = selectedModel.path
+            selectedModelName = selectedModel.name
+            LogManager.i("MainActivity", "Loaded selected model from manager: ${selectedModel.name}")
+        }
+    }
+    
+    private fun openModelManagement() {
+        val intent = Intent(this, ModelManagementActivity::class.java)
+        startActivityForResult(intent, REQUEST_MODEL_MANAGEMENT)
+    }
+    
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_MODEL_MANAGEMENT && resultCode == Activity.RESULT_OK) {
+            // Model selection changed, reload from manager
+            loadSelectedModelFromManager()
+            updateUI()
+        }
+    }
+    
+    companion object {
+        private const val REQUEST_MODEL_MANAGEMENT = 1
     }
     
     private fun exitApp() {

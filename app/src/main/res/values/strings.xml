@@ -38,4 +38,14 @@
     <string name="export">Export</string>
     <string name="delete">Delete</string>
     <string name="manage_completions">Manage Completions</string>
+    <string name="model_management">Model Management</string>
+    <string name="no_models_available">No models available\n\nTap \"Add Model\" to add a LiteRT model file</string>
+    <string name="add_model">Add Model</string>
+    <string name="view">View</string>
+    <string name="model_added">Model added successfully</string>
+    <string name="model_removed">Model removed</string>
+    <string name="model_selected_success">Model selected</string>
+    <string name="confirm_delete_model">Delete this model?</string>
+    <string name="model_info">Model Information</string>
+    <string name="manage_models">Manage Models</string>
 </resources>
