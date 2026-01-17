@@ -67,6 +67,14 @@ class MainActivity : AppCompatActivity() {
         }
     }
     
+    private val modelManagementLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            // Model selection changed, reload from manager
+            loadSelectedModelFromManager()
+            updateUI()
+        }
+    }
+    
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
@@ -151,20 +159,7 @@ class MainActivity : AppCompatActivity() {
     
     private fun openModelManagement() {
         val intent = Intent(this, ModelManagementActivity::class.java)
-        startActivityForResult(intent, REQUEST_MODEL_MANAGEMENT)
-    }
-    
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQUEST_MODEL_MANAGEMENT && resultCode == Activity.RESULT_OK) {
-            // Model selection changed, reload from manager
-            loadSelectedModelFromManager()
-            updateUI()
-        }
-    }
-    
-    companion object {
-        private const val REQUEST_MODEL_MANAGEMENT = 1
+        modelManagementLauncher.launch(intent)
     }
     
     private fun exitApp() {

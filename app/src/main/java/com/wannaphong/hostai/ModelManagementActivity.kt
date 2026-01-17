@@ -276,7 +276,6 @@ class ModelsAdapter(
             
             // Handle card click to select
             root.setOnClickListener {
-                modelRadioButton.isChecked = true
                 onAction(model, ModelAction.SELECT)
             }
             
