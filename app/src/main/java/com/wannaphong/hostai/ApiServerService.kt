@@ -22,6 +22,7 @@ class ApiServerService : Service() {
     private var apiServer: OpenAIApiServer? = null
     private var model: LlamaModel? = null
     private var isRunning = false
+    private var currentPort: Int = DEFAULT_PORT
     
     companion object {
         private const val TAG = "ApiServerService"
@@ -85,6 +86,7 @@ class ApiServerService : Service() {
             return true
         }
         
+        currentPort = port
         LogManager.i(TAG, "Starting API server on port $port")
         
         // Start foreground service IMMEDIATELY to prevent Android from killing the service
@@ -151,7 +153,7 @@ class ApiServerService : Service() {
     
     fun isServerRunning(): Boolean = isRunning
     
-    fun getServerPort(): Int = DEFAULT_PORT
+    fun getServerPort(): Int = currentPort
     
     fun getLoadedModel(): LlamaModel? = model
     

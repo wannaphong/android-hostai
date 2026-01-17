@@ -49,6 +49,12 @@ class OpenAIApiServer(
     // Storage for chat completions with store=true
     private val storedCompletions = ConcurrentHashMap<String, StoredCompletion>()
     
+    // Settings manager for feature toggles
+    private val settingsManager = SettingsManager(context)
+    
+    // Request logger (singleton)
+    private val requestLogger by lazy { RequestLogger.getInstance(context) }
+    
     companion object {
         private const val TAG = "OpenAIApiServer"
         // Maximum request body size (10 MB) to prevent memory exhaustion attacks
@@ -112,6 +118,36 @@ class OpenAIApiServer(
             LogManager.i(TAG, "Javalin server stopped")
         } catch (e: Exception) {
             LogManager.e(TAG, "Error stopping server", e)
+        }
+    }
+    
+    /**
+     * Check if an endpoint is enabled and return error if not
+     */
+    private fun checkEndpointEnabled(ctx: JavalinContext, endpointName: String, isEnabled: Boolean): Boolean {
+        if (!isEnabled) {
+            val errorResponse = mapOf(
+                "error" to mapOf("message" to "$endpointName endpoint is disabled in settings")
+            )
+            ctx.status(403).contentType("application/json").result(gson.toJson(errorResponse))
+            LogManager.w(TAG, "$endpointName endpoint accessed but is disabled")
+            return false
+        }
+        return true
+    }
+    
+    /**
+     * Log request if logging is enabled
+     */
+    private fun logRequestIfEnabled(
+        ctx: JavalinContext,
+        endpoint: String,
+        requestBody: String,
+        responseBody: String
+    ) {
+        if (settingsManager.isLoggingEnabled()) {
+            val ipAddress = ctx.ip()
+            requestLogger.logRequest(ipAddress, endpoint, requestBody, responseBody)
         }
     }
     
@@ -258,6 +294,11 @@ class OpenAIApiServer(
     private fun handleChatUI(ctx: JavalinContext) {
         LogManager.d(TAG, "Handling /chat")
         
+        // Check if web chat UI is enabled
+        if (!checkEndpointEnabled(ctx, "Web Chat UI", settingsManager.isWebChatEnabled())) {
+            return
+        }
+        
         try {
             val inputStream = context.assets.open("index.html")
             val html = inputStream.bufferedReader().use { it.readText() }
@@ -305,6 +346,11 @@ class OpenAIApiServer(
     
     private fun handleChatCompletions(ctx: JavalinContext) {
         LogManager.d(TAG, "Handling /v1/chat/completions")
+        
+        // Check if chat completions endpoint is enabled
+        if (!checkEndpointEnabled(ctx, "Chat Completions", settingsManager.isChatCompletionsEnabled())) {
+            return
+        }
         
         try {
             val bodyText = ctx.body()
@@ -425,7 +471,13 @@ class OpenAIApiServer(
         
         LogManager.i(TAG, "Chat completion completed successfully for session: $sessionId")
         
-        ctx.contentType("application/json").result(gson.toJson(response))
+        val responseJson = gson.toJson(response)
+        
+        // Log request if logging is enabled
+        val requestBody = messages.toString()
+        logRequestIfEnabled(ctx, "/v1/chat/completions", requestBody, responseJson)
+        
+        ctx.contentType("application/json").result(responseJson)
     }
     
     private fun handleChatStreamingResponse(
@@ -559,6 +611,11 @@ class OpenAIApiServer(
     private fun handleCompletions(ctx: JavalinContext) {
         LogManager.d(TAG, "Handling /v1/completions")
         
+        // Check if text completions endpoint is enabled
+        if (!checkEndpointEnabled(ctx, "Text Completions", settingsManager.isTextCompletionsEnabled())) {
+            return
+        }
+        
         try {
             val bodyText = ctx.body()
             
@@ -631,7 +688,12 @@ class OpenAIApiServer(
             )
         )
         
-        ctx.contentType("application/json").result(gson.toJson(response))
+        val responseJson = gson.toJson(response)
+        
+        // Log request if logging is enabled
+        logRequestIfEnabled(ctx, "/v1/completions", prompt, responseJson)
+        
+        ctx.contentType("application/json").result(responseJson)
     }
     
     private fun handleCompletionStreamingResponse(

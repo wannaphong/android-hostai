@@ -141,6 +141,10 @@ class MainActivity : AppCompatActivity() {
             openModelManagement()
         }
         
+        binding.settingsButton.setOnClickListener {
+            openSettings()
+        }
+        
         binding.exitButton.setOnClickListener {
             exitApp()
         }
@@ -155,6 +159,11 @@ class MainActivity : AppCompatActivity() {
             selectedModelName = selectedModel.name
             LogManager.i("MainActivity", "Loaded selected model from manager: ${selectedModel.name}")
         }
+    }
+    
+    private fun openSettings() {
+        val intent = Intent(this, SettingsActivity::class.java)
+        startActivity(intent)
     }
     
     private fun openModelManagement() {
@@ -225,9 +234,13 @@ class MainActivity : AppCompatActivity() {
     private fun proceedToStartServer() {
         LogManager.i("MainActivity", "Proceeding to start server")
         
+        // Get custom port from settings
+        val settingsManager = SettingsManager(this)
+        val customPort = settingsManager.getCustomPort()
+        
         val intent = Intent(this, ApiServerService::class.java).apply {
             action = ApiServerService.ACTION_START
-            putExtra(ApiServerService.EXTRA_PORT, ApiServerService.DEFAULT_PORT)
+            putExtra(ApiServerService.EXTRA_PORT, customPort)
             selectedModelPath?.let { 
                 LogManager.i("MainActivity", "Starting server with model: $selectedModelName")
                 putExtra(ApiServerService.EXTRA_MODEL_PATH, it)
