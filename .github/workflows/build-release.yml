@@ -29,26 +29,29 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
       
+      - name: Check if keystore secret exists
+        id: check_keystore
+        run: |
+          if [ -z "${{ secrets.KEYSTORE_FILE }}" ]; then
+            echo "has_keystore=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_keystore=true" >> "$GITHUB_OUTPUT"
+          fi
+      
       - name: Build Debug APK
         run: ./gradlew assembleDebug --no-daemon
       
       - name: Build Release APK and AAB (unsigned)
-        if: env.KEYSTORE_FILE == ''
-        env:
-          KEYSTORE_FILE: ${{ secrets.KEYSTORE_FILE }}
+        if: steps.check_keystore.outputs.has_keystore != 'true'
         run: ./gradlew assembleRelease bundleRelease --no-daemon
       
       - name: Decode Keystore
-        if: env.KEYSTORE_FILE != ''
-        env:
-          KEYSTORE_FILE: ${{ secrets.KEYSTORE_FILE }}
+        if: steps.check_keystore.outputs.has_keystore == 'true'
         run: |
           echo "${{ secrets.KEYSTORE_FILE }}" | base64 -d > keystore.jks
       
       - name: Build Signed Release APK and AAB
-        if: env.KEYSTORE_FILE != ''
-        env:
-          KEYSTORE_FILE: ${{ secrets.KEYSTORE_FILE }}
+        if: steps.check_keystore.outputs.has_keystore == 'true'
         run: |
           ./gradlew assembleRelease bundleRelease \
             -Pandroid.injected.signing.store.file=keystore.jks \
@@ -58,9 +61,7 @@ jobs:
             --no-daemon
       
       - name: Clean up keystore
-        if: env.KEYSTORE_FILE != ''
-        env:
-          KEYSTORE_FILE: ${{ secrets.KEYSTORE_FILE }}
+        if: steps.check_keystore.outputs.has_keystore == 'true'
         run: rm -f keystore.jks
       
       - name: Copy artifacts
