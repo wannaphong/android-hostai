@@ -7,7 +7,6 @@ import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Conversation
 import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Content
-import com.google.ai.edge.litertlm.Contents
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
 import com.google.ai.edge.litertlm.Message
@@ -308,7 +307,7 @@ class LlamaModel(
             }
             
             // Send message with multimodal contents and get response synchronously
-            val userMessage = Contents.of(*contents.toTypedArray())
+            val userMessage = Message.of(contents)
             val response = sessionConversation.sendMessage(userMessage)
             
             val result = response?.toString() ?: ""
@@ -568,7 +567,7 @@ class LlamaModel(
                         }
                     }
                     
-                    val userMessage = Contents.of(*contents.toTypedArray())
+                    val userMessage = Message.of(contents)
                     sessionConversation.sendMessageAsync(userMessage, callback)
                 }
             } catch (e: Exception) {

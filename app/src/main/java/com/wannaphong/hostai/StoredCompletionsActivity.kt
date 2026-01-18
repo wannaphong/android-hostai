@@ -156,7 +156,7 @@ class StoredCompletionsActivity : AppCompatActivity() {
             .show()
     }
     
-    private fun getAllMessages(completion: StoredCompletion): List<Map<String, String>> {
+    private fun getAllMessages(completion: StoredCompletion): List<Map<String, Any>> {
         val allMessages = completion.messages.toMutableList()
         allMessages.add(mapOf(
             "role" to "assistant",
