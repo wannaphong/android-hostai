@@ -33,7 +33,8 @@ data class GenerationConfig(
     val temperature: Double = 0.7,
     val topK: Int = 40,
     val topP: Double = 0.95,
-    val seed: Int = -1
+    val seed: Int = -1,
+    val tools: List<Any>? = null  // Tool instances for function calling
 )
 
 /**
@@ -139,11 +140,21 @@ class LlamaModel(private val contentResolver: ContentResolver) {
                     topP = config.topP,
                     temperature = config.temperature
                 )
-                val newConversation = currentEngine.createConversation(
-                    ConversationConfig(samplerConfig = samplerConfig)
-                ) ?: throw IllegalStateException("createConversation returned null")
                 
-                LogManager.i(TAG, "Created new conversation for session: $sessionId")
+                // Build conversation config with tools if provided
+                val conversationConfig = if (config.tools != null && config.tools.isNotEmpty()) {
+                    ConversationConfig(
+                        samplerConfig = samplerConfig,
+                        tools = config.tools
+                    )
+                } else {
+                    ConversationConfig(samplerConfig = samplerConfig)
+                }
+                
+                val newConversation = currentEngine.createConversation(conversationConfig)
+                    ?: throw IllegalStateException("createConversation returned null")
+                
+                LogManager.i(TAG, "Created new conversation for session: $sessionId with ${config.tools?.size ?: 0} tools")
                 newConversation
             }
         } catch (e: Exception) {
