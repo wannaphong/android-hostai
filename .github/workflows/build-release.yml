@@ -48,7 +48,7 @@ jobs:
       - name: Decode Keystore
         if: steps.check_keystore.outputs.has_keystore == 'true'
         run: |
-          echo "${{ secrets.KEYSTORE_FILE }}" | base64 -d > keystore.jks
+          echo "${{ secrets.KEYSTORE_FILE }}" | base64 -d > app/keystore.jks
       
       - name: Build Signed Release APK and AAB
         if: steps.check_keystore.outputs.has_keystore == 'true'
@@ -62,7 +62,7 @@ jobs:
       
       - name: Clean up keystore
         if: steps.check_keystore.outputs.has_keystore == 'true'
-        run: rm -f keystore.jks
+        run: rm -f app/keystore.jks
       
       - name: Copy artifacts
         run: |
