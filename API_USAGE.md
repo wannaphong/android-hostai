@@ -127,6 +127,146 @@ data: [DONE]
 ```
 
 
+#### Chat Completions with Multimodal Content
+
+HostAI now supports native multimodal inputs (images and audio) using LiteRT-LM 0.8.0's vision and audio backends. Message content can be either a string or an array of content parts.
+
+**Requirements:**
+- Use a multimodal model (e.g., Gemma-3N-E2B, Gemma-3N-E4B)
+- Images: Base64 encoded data only (URLs not supported yet)
+- Audio: Base64 encoded data with format specification
+- Vision processing uses GPU backend, audio uses CPU backend
+
+**Multimodal with Images:**
+
+Send base64-encoded images as part of the conversation:
+
+```bash
+curl http://<phone-ip>:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "llama-mock-model",
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "What is in this image?"
+          },
+          {
+            "type": "image_url",
+            "image_url": {
+              "url": "data:image/jpeg;base64,/9j/4AAQSkZJRg...",
+              "detail": "high"
+            }
+          }
+        ]
+      }
+    ]
+  }'
+```
+
+**Important:** Image URLs (http://, https://) are not yet supported. Use base64 encoding:
+
+```bash
+curl http://<phone-ip>:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "llama-mock-model",
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Describe this image"
+          },
+          {
+            "type": "image_url",
+            "image_url": {
+              "url": "data:image/jpeg;base64,/9j/4AAQSkZJRg...",
+              "detail": "auto"
+            }
+          }
+        ]
+      }
+    ]
+  }'
+```
+
+**Multimodal with Audio:**
+
+Send base64-encoded audio input as part of the conversation:
+
+```bash
+curl http://<phone-ip>:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "llama-mock-model",
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Transcribe this audio"
+          },
+          {
+            "type": "input_audio",
+            "input_audio": {
+              "data": "base64_encoded_audio_data",
+              "format": "wav"
+            }
+          }
+        ]
+      }
+    ]
+  }'
+```
+
+**Response:**
+The response follows the standard chat completion format:
+```json
+{
+  "id": "chatcmpl-1705384800123",
+  "object": "chat.completion",
+  "created": 1705384800,
+  "model": "llama-mock-model",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Based on the image/audio content, I can see..."
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 25,
+    "completion_tokens": 20,
+    "total_tokens": 45
+  }
+}
+```
+
+**Multimodal Model Support:**
+
+To use multimodal features, you need a model that supports vision/audio:
+- **Gemma-3N-E2B**: Vision and audio support (2.9 GB, 4-bit quantized)
+- **Gemma-3N-E4B**: Vision and audio support (4.2 GB, 4-bit quantized)
+
+Download from [HuggingFace LiteRT Community](https://huggingface.co/litert-community) or:
+- [Gemma-3N-E2B](https://huggingface.co/google/gemma-3n-E2B-it-litert-lm-preview)
+- [Gemma-3N-E4B](https://huggingface.co/google/gemma-3n-E4B-it-litert-lm-preview)
+
+**Content Detail Levels for Images:**
+- `low`: Lower resolution (512x512), faster processing
+- `high`: Higher resolution, more detailed analysis
+- `auto` (default): Automatically choose based on image
+
+
 #### Chat Completions with Multi-Session
 
 Maintain separate conversation contexts using session IDs:
@@ -559,6 +699,56 @@ response3 = client.chat.completions.create(
         {"role": "user", "content": "What's my favorite color?"}
     ]
 )
+
+# Multimodal: Chat with image URL
+response_with_image = client.chat.completions.create(
+    model="llama-mock-model",
+    messages=[
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "What is in this image?"},
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": "https://example.com/image.jpg",
+                        "detail": "high"
+                    }
+                }
+            ]
+        }
+    ]
+)
+
+# Multimodal: Chat with base64 encoded image
+import base64
+
+def encode_image(image_path):
+    with open(image_path, "rb") as image_file:
+        return base64.b64encode(image_file.read()).decode('utf-8')
+
+base64_image = encode_image("path/to/image.jpg")
+
+response_with_base64_image = client.chat.completions.create(
+    model="llama-mock-model",
+    messages=[
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "Describe this image"},
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/jpeg;base64,{base64_image}",
+                        "detail": "auto"
+                    }
+                }
+            ]
+        }
+    ]
+)
+
+print(response_with_base64_image.choices[0].message.content)
 ```
 
 ### JavaScript/Node.js

@@ -5,6 +5,7 @@ An Android application that uses [LiteRT-LM](https://github.com/google-ai-edge/L
 ## Features
 
 - 🚀 OpenAI-compatible API endpoints
+- 🎨 **Multimodal support** - Send images and audio in chat messages (OpenAI format)
 - 💬 Multi-session conversation support - maintain separate conversation contexts for multiple users
 - 📱 Native Android app with Material Design UI
 - 🔄 Foreground service for reliable server operation
@@ -17,7 +18,7 @@ An Android application that uses [LiteRT-LM](https://github.com/google-ai-edge/L
 The server implements the following OpenAI-compatible endpoints:
 
 - `GET /v1/models` - List available models
-- `POST /v1/chat/completions` - Chat completions (ChatGPT-style) with multi-session support
+- `POST /v1/chat/completions` - Chat completions (ChatGPT-style) with multi-session and multimodal support
 - `POST /v1/completions` - Text completions with multi-session support
 - `GET /v1/sessions` - List active conversation sessions
 - `DELETE /v1/sessions/{sessionId}` - Clear a specific conversation session
@@ -144,6 +145,40 @@ curl http://<phone-ip>:8080/v1/chat/completions \
 ```
 
 See [API_USAGE.md](API_USAGE.md) for more examples and session management endpoints.
+
+### Multimodal Support
+
+HostAI now supports native multimodal inputs (images and audio) using LiteRT-LM 0.8.0's vision and audio backends. You can include images and audio in your chat messages following the OpenAI API format:
+
+```bash
+# Example with base64-encoded image
+curl http://<phone-ip>:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gemma-3n-model",
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {"type": "text", "text": "What is in this image?"},
+          {
+            "type": "image_url",
+            "image_url": {
+              "url": "data:image/jpeg;base64,/9j/4AAQSkZJRg..."
+            }
+          }
+        ]
+      }
+    ]
+  }'
+```
+
+**Requirements:**
+- Use a multimodal model like [Gemma-3N-E2B](https://huggingface.co/google/gemma-3n-E2B-it-litert-lm-preview) or [Gemma-3N-E4B](https://huggingface.co/google/gemma-3n-E4B-it-litert-lm-preview)
+- Images must be base64 encoded (URLs not yet supported)
+- Vision processing uses GPU, audio processing uses CPU
+
+See [API_USAGE.md](API_USAGE.md) for detailed multimodal examples including audio inputs and Python code with base64 encoding.
 
 ### Example API Call
 

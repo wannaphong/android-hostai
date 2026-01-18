@@ -1,9 +1,13 @@
 package com.wannaphong.hostai
 
 import android.content.Context
+import android.util.Base64
+import com.google.ai.edge.litertlm.Content
+import com.google.ai.edge.litertlm.Contents
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonObject
+import com.google.gson.reflect.TypeToken
 import io.javalin.Javalin
 import io.javalin.http.Context as JavalinContext
 import kotlinx.coroutines.*
@@ -12,13 +16,15 @@ import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Data class to store chat completion information.
+ * Messages are stored as Map<String, Any> to support multimodal content.
+ * Content can be either String (simple text) or List (multimodal content parts).
  */
 data class StoredCompletion(
     val id: String,
     val obj: String,
     val created: Long,
     val model: String,
-    val messages: List<Map<String, String>>,
+    val messages: List<Map<String, Any>>,
     val responseContent: String,
     var metadata: Map<String, Any>?
 )
@@ -383,18 +389,22 @@ class OpenAIApiServer(
             // Build generation config from request parameters
             val config = extractGenerationConfig(request)
             
-            // Build prompt from messages
-            val prompt = buildPromptFromMessages(messages)
+            // Build content from messages (either String prompt or List<Content> for multimodal)
+            val contents = buildContentsFromMessages(messages)
             
-            // Log a preview of the prompt to verify character encoding
-            val promptPreview = if (prompt.length > 100) prompt.take(100) + "..." else prompt
-            LogManager.d(TAG, "Prompt preview: $promptPreview")
+            // Log preview
+            if (contents is String) {
+                val promptPreview = if (contents.length > 100) contents.take(100) + "..." else contents
+                LogManager.d(TAG, "Prompt preview: $promptPreview")
+            } else {
+                LogManager.d(TAG, "Multimodal content with ${(contents as List<*>).size} parts")
+            }
             LogManager.d(TAG, "Chat completion - stream: $stream, maxTokens: ${config.maxTokens}, temp: ${config.temperature}")
             
             if (stream) {
-                handleChatStreamingResponse(ctx, prompt, config, sessionId, messages, store, metadata, bodyText)
+                handleChatStreamingResponse(ctx, contents, config, sessionId, messages, store, metadata, bodyText)
             } else {
-                handleChatNonStreamingResponse(ctx, prompt, config, sessionId, messages, store, metadata, bodyText)
+                handleChatNonStreamingResponse(ctx, contents, config, sessionId, messages, store, metadata, bodyText)
             }
         } catch (e: Exception) {
             LogManager.e(TAG, "Error handling chat completions", e)
@@ -407,7 +417,7 @@ class OpenAIApiServer(
     
     private fun handleChatNonStreamingResponse(
         ctx: JavalinContext,
-        prompt: String,
+        contents: Any,  // Either String or List<Content>
         config: GenerationConfig,
         sessionId: String,
         messages: com.google.gson.JsonArray,
@@ -415,10 +425,31 @@ class OpenAIApiServer(
         metadata: Map<String, Any>?,
         bodyText: String
     ) {
-        // Generate response with session ID
-        val completion = model.generate(prompt, config, sessionId)
+        // Generate response with session ID - handle both String and multimodal content
+        val completion = if (contents is String) {
+            model.generate(contents, config, sessionId)
+        } else {
+            @Suppress("UNCHECKED_CAST")
+            model.generateWithContents(contents as List<Content>, config, sessionId)
+        }
         
-        val promptTokens = prompt.split(" ").size
+        val promptTokens = when (contents) {
+            is String -> contents.split(" ").size
+            else -> {
+                // Estimate tokens for multimodal content
+                // Count text parts + fixed cost per image/audio
+                @Suppress("UNCHECKED_CAST")
+                val contentList = contents as List<Content>
+                contentList.sumOf { content ->
+                    when (content) {
+                        is Content.Text -> content.toString().split(" ").size
+                        is Content.ImageBytes -> 85  // Typical image token cost (based on OpenAI's 85 tokens per low-detail image)
+                        is Content.AudioBytes -> 50  // Estimate for audio
+                        else -> 10
+                    }
+                }
+            }
+        }
         val completionTokens = completion.split(" ").size
         
         val id = "chatcmpl-${System.currentTimeMillis()}"
@@ -428,9 +459,28 @@ class OpenAIApiServer(
         if (store) {
             val messagesList = messages.map { element ->
                 val msgObj = element.asJsonObject
+                val role = msgObj.get("role")?.asString ?: ""
+                val contentElement = msgObj.get("content")
+                
+                // Preserve the original content structure (string or array for multimodal)
+                val content: Any = when {
+                    contentElement == null -> ""
+                    contentElement.isJsonPrimitive && contentElement.asJsonPrimitive.isString -> {
+                        contentElement.asString
+                    }
+                    contentElement.isJsonArray -> {
+                        // Store multimodal content as a list of maps using TypeToken for type safety
+                        val mapType = object : TypeToken<Map<String, Any>>() {}.type
+                        contentElement.asJsonArray.map { part ->
+                            gson.fromJson<Map<String, Any>>(part, mapType)
+                        }
+                    }
+                    else -> contentElement.toString()
+                }
+                
                 mapOf(
-                    "role" to (msgObj.get("role")?.asString ?: ""),
-                    "content" to (msgObj.get("content")?.asString ?: "")
+                    "role" to role,
+                    "content" to content
                 )
             }
             
@@ -482,7 +532,7 @@ class OpenAIApiServer(
     
     private fun handleChatStreamingResponse(
         ctx: JavalinContext,
-        prompt: String,
+        contents: Any,  // Either String or List<Content>
         config: GenerationConfig,
         sessionId: String,
         messages: com.google.gson.JsonArray,
@@ -515,22 +565,23 @@ class OpenAIApiServer(
         try {
             var tokenCount = 0
             
-            val job = model.generateStream(prompt, config, sessionId) { token ->
-                try {
-                    tokenCount++
-                    
-                    // Accumulate token for logging
-                    accumulatedResponse.append(token)
-                    
-                    // Format according to OpenAI SSE format for chat
-                    val chunk = mapOf(
-                        "id" to id,
-                        "object" to "chat.completion.chunk",
-                        "created" to created,
-                        "model" to model.getModelName(),
-                        "choices" to listOf(
-                            mapOf(
-                                "index" to 0,
+            val job = if (contents is String) {
+                model.generateStream(contents, config, sessionId) { token ->
+                    try {
+                        tokenCount++
+                        
+                        // Accumulate token for logging
+                        accumulatedResponse.append(token)
+                        
+                        // Format according to OpenAI SSE format for chat
+                        val chunk = mapOf(
+                            "id" to id,
+                            "object" to "chat.completion.chunk",
+                            "created" to created,
+                            "model" to model.getModelName(),
+                            "choices" to listOf(
+                                mapOf(
+                                    "index" to 0,
                                 "delta" to mapOf(
                                     "content" to token
                                 ),
@@ -552,6 +603,49 @@ class OpenAIApiServer(
                 } catch (e: Exception) {
                     LogManager.e(TAG, "Error writing token to stream", e)
                     throw e
+                }
+            }
+            } else {
+                // Multimodal streaming
+                @Suppress("UNCHECKED_CAST")
+                model.generateStreamWithContents(contents as List<Content>, config, sessionId) { token ->
+                    try {
+                        tokenCount++
+                        
+                        // Accumulate token for logging
+                        accumulatedResponse.append(token)
+                        
+                        // Format according to OpenAI SSE format for chat
+                        val chunk = mapOf(
+                            "id" to id,
+                            "object" to "chat.completion.chunk",
+                            "created" to created,
+                            "model" to model.getModelName(),
+                            "choices" to listOf(
+                                mapOf(
+                                    "index" to 0,
+                                    "delta" to mapOf(
+                                        "content" to token
+                                    ),
+                                    "finish_reason" to null
+                                )
+                            )
+                        )
+                        
+                        // Write SSE format: "data: {json}\n\n"
+                        val sseData = "data: ${gson.toJson(chunk)}\n\n"
+                        outputStream.write(sseData.toByteArray(Charsets.UTF_8))
+                        outputStream.flush()
+                        
+                        LogManager.d(TAG, "Streamed multimodal token $tokenCount")
+                    } catch (e: IOException) {
+                        // Client disconnected - stop streaming gracefully
+                        LogManager.d(TAG, "Client disconnected during multimodal streaming (token $tokenCount)")
+                        throw e
+                    } catch (e: Exception) {
+                        LogManager.e(TAG, "Error writing multimodal token to stream", e)
+                        throw e
+                    }
                 }
             }
             
@@ -863,15 +957,167 @@ class OpenAIApiServer(
         // Note: Javalin manages the output stream lifecycle; don't close it manually
     }
     
-    private fun buildPromptFromMessages(messages: com.google.gson.JsonArray): String {
-        val promptBuilder = StringBuilder()
+    /**
+     * Build prompt from messages with multimodal support.
+     * Returns either a simple String prompt or a List of Content objects for multimodal inputs.
+     * 
+     * OpenAI multimodal format:
+     * - content can be a string: "Hello"
+     * - content can be an array: [{"type": "text", "text": "Hello"}, {"type": "image_url", "image_url": {"url": "..."}}]
+     */
+    private fun buildContentsFromMessages(messages: com.google.gson.JsonArray): Any {
+        // Check if any message has multimodal content
+        var hasMultimodal = false
+        for (message in messages) {
+            val msgObj = message.asJsonObject
+            val contentElement = msgObj.get("content")
+            if (contentElement != null && contentElement.isJsonArray) {
+                hasMultimodal = true
+                break
+            }
+        }
+        
+        // If no multimodal content, build a simple text prompt for backward compatibility
+        if (!hasMultimodal) {
+            val promptBuilder = StringBuilder()
+            for (message in messages) {
+                val msgObj = message.asJsonObject
+                val role = msgObj.get("role")?.asString ?: ""
+                val content = msgObj.get("content")?.asString ?: ""
+                promptBuilder.append("$role: $content\n")
+            }
+            return promptBuilder.toString()
+        }
+        
+        // Build list of Content objects for multimodal support
+        val contentsList = mutableListOf<Content>()
+        
         for (message in messages) {
             val msgObj = message.asJsonObject
             val role = msgObj.get("role")?.asString ?: ""
-            val content = msgObj.get("content")?.asString ?: ""
-            promptBuilder.append("$role: $content\n")
+            val contentElement = msgObj.get("content")
+            
+            // Add role prefix as text
+            if (role.isNotEmpty()) {
+                contentsList.add(Content.Text("$role: "))
+            }
+            
+            when {
+                contentElement == null -> {
+                    // Empty content, skip
+                }
+                contentElement.isJsonPrimitive && contentElement.asJsonPrimitive.isString -> {
+                    // Simple text content
+                    contentsList.add(Content.Text(contentElement.asString))
+                }
+                contentElement.isJsonArray -> {
+                    // Multimodal content: array of content parts
+                    contentsList.addAll(parseMultimodalContentToObjects(contentElement.asJsonArray))
+                }
+                else -> {
+                    contentsList.add(Content.Text(contentElement.toString()))
+                }
+            }
+            
+            // Add newline after each message
+            contentsList.add(Content.Text("\n"))
         }
-        return promptBuilder.toString()
+        
+        return contentsList
+    }
+    
+    /**
+     * Parse multimodal content from OpenAI format to LiteRT Content objects.
+     * 
+     * OpenAI format -> LiteRT format:
+     * - {"type": "text", "text": "..."} -> Content.Text(...)
+     * - {"type": "image_url", "image_url": {"url": "data:image/...;base64,..."}} -> Content.ImageBytes(bytes)
+     * - {"type": "image_url", "image_url": {"url": "http://..."}} -> Content.Text("[Image URL: ...]") (URLs not supported yet)
+     * - {"type": "input_audio", "input_audio": {"data": "base64...", "format": "..."}} -> Content.AudioBytes(bytes)
+     */
+    private fun parseMultimodalContentToObjects(contentArray: com.google.gson.JsonArray): List<Content> {
+        val contents = mutableListOf<Content>()
+        
+        for (contentPart in contentArray) {
+            val partObj = contentPart.asJsonObject
+            val type = partObj.get("type")?.asString ?: continue
+            
+            when (type) {
+                "text" -> {
+                    val text = partObj.get("text")?.asString ?: ""
+                    if (text.isNotEmpty()) {
+                        contents.add(Content.Text(text))
+                    }
+                }
+                "image_url" -> {
+                    val imageUrlObj = partObj.get("image_url")?.asJsonObject
+                    val url = imageUrlObj?.get("url")?.asString ?: ""
+                    val detail = imageUrlObj?.get("detail")?.asString ?: "auto"
+                    
+                    if (url.startsWith("data:image")) {
+                        // Extract base64 image data
+                        try {
+                            val base64Data = url.substringAfter("base64,")
+                            val imageBytes = Base64.decode(base64Data, Base64.DEFAULT)
+                            contents.add(Content.ImageBytes(imageBytes))
+                            LogManager.i(TAG, "Multimodal: Decoded base64 image (${imageBytes.size} bytes, detail=$detail)")
+                        } catch (e: Exception) {
+                            LogManager.e(TAG, "Failed to decode base64 image", e)
+                            contents.add(Content.Text("\n[Error decoding image: ${e.message}]\n"))
+                        }
+                    } else {
+                        // Image URLs not directly supported - would need to fetch the image
+                        LogManager.w(TAG, "Multimodal: Image URLs not supported yet, only base64 encoded images: $url")
+                        contents.add(Content.Text("\n[Image URL not supported: $url (use base64 encoding instead)]\n"))
+                    }
+                }
+                "input_audio" -> {
+                    val audioObj = partObj.get("input_audio")?.asJsonObject
+                    val audioData = audioObj?.get("data")?.asString
+                    val format = audioObj?.get("format")?.asString ?: "unknown"
+                    
+                    if (audioData != null) {
+                        try {
+                            val audioBytes = Base64.decode(audioData, Base64.DEFAULT)
+                            contents.add(Content.AudioBytes(audioBytes))
+                            LogManager.i(TAG, "Multimodal: Decoded audio data (${audioBytes.size} bytes, format=$format)")
+                        } catch (e: Exception) {
+                            LogManager.e(TAG, "Failed to decode audio data", e)
+                            contents.add(Content.Text("\n[Error decoding audio: ${e.message}]\n"))
+                        }
+                    } else {
+                        LogManager.w(TAG, "Multimodal: Audio input missing data field")
+                        contents.add(Content.Text("\n[Audio input missing data]\n"))
+                    }
+                }
+                else -> {
+                    LogManager.w(TAG, "Unknown content type: $type")
+                }
+            }
+        }
+        
+        return contents
+    }
+    
+    /**
+     * Legacy method for building simple text prompts.
+     * Kept for backward compatibility with text-only models.
+     */
+    private fun buildPromptFromMessages(messages: com.google.gson.JsonArray): String {
+        val contents = buildContentsFromMessages(messages)
+        return if (contents is String) {
+            contents
+        } else {
+            // If multimodal, build a text representation
+            (contents as List<*>).joinToString("") { 
+                when (it) {
+                    is Content.Text -> it.toString()
+                    is Content.ImageBytes -> "[Image]"
+                    is Content.AudioBytes -> "[Audio]"
+                    else -> it.toString()
+                }
+            }
+        }
     }
     
     private fun handleListSessions(ctx: JavalinContext) {
@@ -979,9 +1225,10 @@ class OpenAIApiServer(
     }
     
     /**
-     * Helper function to get all messages including the assistant response
+     * Helper function to get all messages including the assistant response.
+     * Returns Map<String, Any> to support multimodal content.
      */
-    private fun getAllMessages(storedCompletion: StoredCompletion): List<Map<String, String>> {
+    private fun getAllMessages(storedCompletion: StoredCompletion): List<Map<String, Any>> {
         val allMessages = storedCompletion.messages.toMutableList()
         allMessages.add(mapOf(
             "role" to "assistant",
