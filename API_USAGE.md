@@ -1018,7 +1018,9 @@ if response.choices[0].message.tool_calls:
 - Tool calling requires a model trained to support function calling (e.g., FunctionGemma)
 - The model automatically decides when to use tools based on the user's query
 - Tool execution happens on the server side using the example tool implementations
-- Tools are session-specific and will maintain context across conversation turns
+- Tools are session-specific: when a session is created with tools, those tools remain available for all subsequent requests in that session
+- To use different tools for a session, clear the session first using `DELETE /v1/sessions/{sessionId}`
+- Currently uses built-in example tools; future versions may support custom tool definitions
 
 ## Error Handling
 
