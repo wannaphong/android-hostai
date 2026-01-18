@@ -509,8 +509,8 @@ class OpenAIApiServer(
         // Get the response output stream
         val outputStream = ctx.res().outputStream
         
-        // Accumulate response for logging
-        val accumulatedResponse = StringBuilder()
+        // Accumulate response for logging (using StringBuffer for thread safety)
+        val accumulatedResponse = StringBuffer()
         
         try {
             var tokenCount = 0
@@ -744,8 +744,8 @@ class OpenAIApiServer(
         // Get the response output stream
         val outputStream = ctx.res().outputStream
         
-        // Accumulate response for logging
-        val accumulatedResponse = StringBuilder()
+        // Accumulate response for logging (using StringBuffer for thread safety)
+        val accumulatedResponse = StringBuffer()
         
         try {
             var tokenCount = 0
