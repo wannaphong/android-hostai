@@ -245,8 +245,7 @@ class OpenAIApiServer(
                     <strong>POST /v1/chat/completions</strong><br>
                     Chat completion endpoint (OpenAI compatible)<br>
                     <em>Supports multi-session via: conversation_id, user, session_id fields or X-Session-ID header</em><br>
-                    <em>Set store=true to persist completion for later retrieval</em><br>
-                    <em>Supports function calling via tools parameter (requires tool-compatible model)</em>
+                    <em>Set store=true to persist completion for later retrieval</em>
                 </div>
                 <div class="endpoint">
                     <strong>GET /v1/chat/completions/{completion_id}</strong><br>
@@ -1196,9 +1195,6 @@ class OpenAIApiServer(
      * Supports parameters compatible with LiteRT's SamplerConfig.
      */
     private fun extractGenerationConfig(request: JsonObject): GenerationConfig {
-        // Parse tools if provided
-        val toolInstances = parseTools(request.getAsJsonArray("tools"))
-        
         // Parse extra_body for additional context (OpenAI API compatibility)
         val extraContext = parseExtraBody(request.getAsJsonObject("extra_body"))
         
@@ -1208,7 +1204,6 @@ class OpenAIApiServer(
             topK = request.get("top_k")?.asInt ?: 40,
             topP = request.get("top_p")?.asDouble ?: 0.95,
             seed = request.get("seed")?.asInt ?: -1,
-            tools = toolInstances,
             extraContext = extraContext
         )
     }
@@ -1247,22 +1242,5 @@ class OpenAIApiServer(
             }
             entry.key to value
         }.filterValues { it != null } as Map<String, Any>
-    }
-    
-    /**
-     * Parse tools from request and return tool instances.
-     * Currently uses example tool set for demonstration.
-     * In a real implementation, this would dynamically create tool instances based on definitions.
-     */
-    private fun parseTools(toolsArray: com.google.gson.JsonArray?): List<Any>? {
-        if (toolsArray == null || toolsArray.isEmpty()) {
-            return null
-        }
-        
-        LogManager.d(TAG, "Tools provided in request (${toolsArray.size()} tools)")
-        
-        // For now, return example tool set
-        // A full implementation would parse the tool definitions and create dynamic tool instances
-        return listOf(ExampleToolSet())
     }
 }

@@ -6,7 +6,6 @@ An Android application that uses [LiteRT-LM](https://github.com/google-ai-edge/L
 
 - 🚀 OpenAI-compatible API endpoints
 - 💬 Multi-session conversation support - maintain separate conversation contexts for multiple users
-- 🔧 Function calling / Tool support - enable models to call predefined functions
 - 📱 Native Android app with Material Design UI
 - 🔄 Foreground service for reliable server operation
 - 🌐 Local network access via WiFi
@@ -18,7 +17,7 @@ An Android application that uses [LiteRT-LM](https://github.com/google-ai-edge/L
 The server implements the following OpenAI-compatible endpoints:
 
 - `GET /v1/models` - List available models
-- `POST /v1/chat/completions` - Chat completions (ChatGPT-style) with multi-session support and function calling
+- `POST /v1/chat/completions` - Chat completions (ChatGPT-style) with multi-session support
 - `POST /v1/completions` - Text completions with multi-session support
 - `GET /v1/sessions` - List active conversation sessions
 - `DELETE /v1/sessions/{sessionId}` - Clear a specific conversation session
@@ -147,43 +146,6 @@ response = client.chat.completions.create(
 
 print(response.choices[0].message.content)
 ```
-
-### Function Calling / Tools
-
-HostAI supports function calling, allowing models to call predefined functions. This requires a model with tool support (e.g., [FunctionGemma](https://huggingface.co/google/functiongemma-270m-it)).
-
-```bash
-curl http://<phone-ip>:8080/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "llama-model",
-    "messages": [{"role": "user", "content": "What is the weather in Paris?"}],
-    "tools": [
-      {
-        "type": "function",
-        "function": {
-          "name": "get_weather",
-          "description": "Get the current weather for a city",
-          "parameters": {
-            "type": "object",
-            "properties": {
-              "city": {"type": "string", "description": "The city name"}
-            },
-            "required": ["city"]
-          }
-        }
-      }
-    ]
-  }'
-```
-
-Built-in example tools include:
-- `get_weather` - Get weather for a city
-- `sum` - Calculate sum of numbers
-- `get_current_time` - Get current time in a timezone
-
-See [API_USAGE.md](API_USAGE.md) for detailed function calling examples and more information.
-
 
 ## Architecture
 
