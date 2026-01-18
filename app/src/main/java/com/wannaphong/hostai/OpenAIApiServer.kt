@@ -4,6 +4,7 @@ import android.content.Context
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonObject
+import com.google.gson.reflect.TypeToken
 import io.javalin.Javalin
 import io.javalin.http.Context as JavalinContext
 import kotlinx.coroutines.*
@@ -440,9 +441,10 @@ class OpenAIApiServer(
                         contentElement.asString
                     }
                     contentElement.isJsonArray -> {
-                        // Store multimodal content as a list of maps
+                        // Store multimodal content as a list of maps using TypeToken for type safety
+                        val mapType = object : TypeToken<Map<String, Any>>() {}.type
                         contentElement.asJsonArray.map { part ->
-                            gson.fromJson(part, Map::class.java) as Map<String, Any>
+                            gson.fromJson<Map<String, Any>>(part, mapType)
                         }
                     }
                     else -> contentElement.toString()
@@ -967,6 +969,7 @@ class OpenAIApiServer(
             }
         }
         
+        // Return the built content or empty string if no valid content parts were found
         return contentBuilder.toString()
     }
     
