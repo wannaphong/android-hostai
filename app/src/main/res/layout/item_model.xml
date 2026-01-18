@@ -49,6 +49,14 @@
                     android:text="Size: 1.2 GB"
                     android:textSize="12sp"
                     android:alpha="0.6" />
+
+                <TextView
+                    android:id="@+id/modelDateText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Added: 2024-01-01"
+                    android:textSize="12sp"
+                    android:alpha="0.6" />
             </LinearLayout>
         </LinearLayout>
 
