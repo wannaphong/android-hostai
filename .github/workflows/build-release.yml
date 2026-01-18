@@ -34,9 +34,7 @@ jobs:
       
       - name: Build Release APK and AAB (unsigned)
         if: ${{ secrets.KEYSTORE_FILE == '' }}
-        run: |
-          ./gradlew assembleRelease --no-daemon
-          ./gradlew bundleRelease --no-daemon
+        run: ./gradlew assembleRelease bundleRelease --no-daemon
       
       - name: Decode Keystore
         if: ${{ secrets.KEYSTORE_FILE != '' }}
@@ -60,15 +58,17 @@ jobs:
       - name: Copy artifacts
         run: |
           mkdir -p artifacts
+          # Copy debug APK
           if [ -f app/build/outputs/apk/debug/app-debug.apk ]; then
             cp app/build/outputs/apk/debug/app-debug.apk artifacts/HostAI-debug.apk
           fi
+          # Copy release APK (signed if keystore available, unsigned otherwise)
           if [ -f app/build/outputs/apk/release/app-release.apk ]; then
             cp app/build/outputs/apk/release/app-release.apk artifacts/HostAI-release.apk
+          elif [ -f app/build/outputs/apk/release/app-release-unsigned.apk ]; then
+            cp app/build/outputs/apk/release/app-release-unsigned.apk artifacts/HostAI-release.apk
           fi
-          if [ -f app/build/outputs/apk/release/app-release-unsigned.apk ]; then
-            cp app/build/outputs/apk/release/app-release-unsigned.apk artifacts/HostAI-release-unsigned.apk
-          fi
+          # Copy release AAB (signed if keystore available, unsigned otherwise)
           if [ -f app/build/outputs/bundle/release/app-release.aab ]; then
             cp app/build/outputs/bundle/release/app-release.aab artifacts/HostAI-release.aab
           fi
@@ -84,7 +84,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: HostAI-release-apk
-          path: artifacts/HostAI-release*.apk
+          path: artifacts/HostAI-release.apk
           if-no-files-found: warn
       
       - name: Upload Release AAB
@@ -100,7 +100,7 @@ jobs:
         with:
           files: |
             artifacts/HostAI-debug.apk
-            artifacts/HostAI-release*.apk
+            artifacts/HostAI-release.apk
             artifacts/HostAI-release.aab
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
