@@ -79,4 +79,8 @@
     <string name="export_failed">Failed to export logs</string>
     <string name="licenses">Third Party Licenses</string>
     <string name="view_licenses">View Licenses</string>
+    <string name="backend_settings">Backend Settings</string>
+    <string name="backend_settings_desc">Choose between GPU or CPU backend for model inference</string>
+    <string name="use_gpu_backend">Use GPU Backend</string>
+    <string name="use_gpu_backend_desc">GPU may provide faster inference on supported devices. CPU is more compatible.</string>
 </resources>

@@ -16,6 +16,7 @@ class SettingsManager(context: Context) {
         private const val KEY_TEXT_COMPLETIONS_ENABLED = "text_completions_enabled"
         private const val KEY_CHAT_COMPLETIONS_ENABLED = "chat_completions_enabled"
         private const val KEY_LOGGING_ENABLED = "logging_enabled"
+        private const val KEY_USE_GPU_BACKEND = "use_gpu_backend"
         
         const val DEFAULT_PORT = 8080
     }
@@ -88,5 +89,19 @@ class SettingsManager(context: Context) {
      */
     fun setLoggingEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_LOGGING_ENABLED, enabled).apply()
+    }
+    
+    /**
+     * Check if GPU backend is enabled (default: false, uses CPU for compatibility)
+     */
+    fun isGpuBackendEnabled(): Boolean {
+        return prefs.getBoolean(KEY_USE_GPU_BACKEND, false)
+    }
+    
+    /**
+     * Set GPU backend enabled state
+     */
+    fun setGpuBackendEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_USE_GPU_BACKEND, enabled).apply()
     }
 }
