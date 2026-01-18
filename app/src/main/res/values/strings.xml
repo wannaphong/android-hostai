@@ -77,4 +77,6 @@
     <string name="logs_exported">Logs exported to: %s</string>
     <string name="logs_cleared">All logs cleared</string>
     <string name="export_failed">Failed to export logs</string>
+    <string name="licenses">Third Party Licenses</string>
+    <string name="view_licenses">View Licenses</string>
 </resources>

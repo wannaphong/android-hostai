@@ -61,6 +61,12 @@
             android:label="@string/settings"
             android:parentActivityName=".MainActivity" />
 
+        <activity
+            android:name=".LicensesActivity"
+            android:exported="false"
+            android:label="@string/licenses"
+            android:parentActivityName=".SettingsActivity" />
+
         <service
             android:name=".ApiServerService"
             android:enabled="true"
