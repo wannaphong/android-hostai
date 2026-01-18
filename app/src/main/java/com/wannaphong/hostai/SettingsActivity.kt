@@ -57,6 +57,10 @@ class SettingsActivity : AppCompatActivity() {
             clearLogs()
         }
         
+        binding.viewLicensesButton.setOnClickListener {
+            openLicenses()
+        }
+        
         binding.saveSettingsButton.setOnClickListener {
             saveSettings()
         }
@@ -155,6 +159,11 @@ class SettingsActivity : AppCompatActivity() {
         requestLogger.clearLogs()
         updateLogsCount()
         Toast.makeText(this, R.string.logs_cleared, Toast.LENGTH_SHORT).show()
+    }
+    
+    private fun openLicenses() {
+        val intent = Intent(this, LicensesActivity::class.java)
+        startActivity(intent)
     }
     
     override fun onSupportNavigateUp(): Boolean {

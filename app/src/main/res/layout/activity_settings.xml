@@ -352,6 +352,39 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
+        <!-- Licenses Card -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            app:cardElevation="2dp"
+            app:cardCornerRadius="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="20dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/licenses"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:textColor="?attr/colorOnSurface" />
+
+                <Button
+                    android:id="@+id/viewLicensesButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="56dp"
+                    android:text="@string/view_licenses"
+                    android:textSize="14sp"
+                    android:layout_marginTop="12dp"
+                    style="@style/Widget.HostAI.Button.Outlined" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
         <!-- Save Button -->
         <Button
             android:id="@+id/saveSettingsButton"
