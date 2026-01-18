@@ -33,16 +33,22 @@ jobs:
         run: ./gradlew assembleDebug --no-daemon
       
       - name: Build Release APK and AAB (unsigned)
-        if: ${{ secrets.KEYSTORE_FILE == '' }}
+        if: env.KEYSTORE_FILE == ''
+        env:
+          KEYSTORE_FILE: ${{ secrets.KEYSTORE_FILE }}
         run: ./gradlew assembleRelease bundleRelease --no-daemon
       
       - name: Decode Keystore
-        if: ${{ secrets.KEYSTORE_FILE != '' }}
+        if: env.KEYSTORE_FILE != ''
+        env:
+          KEYSTORE_FILE: ${{ secrets.KEYSTORE_FILE }}
         run: |
           echo "${{ secrets.KEYSTORE_FILE }}" | base64 -d > keystore.jks
       
       - name: Build Signed Release APK and AAB
-        if: ${{ secrets.KEYSTORE_FILE != '' }}
+        if: env.KEYSTORE_FILE != ''
+        env:
+          KEYSTORE_FILE: ${{ secrets.KEYSTORE_FILE }}
         run: |
           ./gradlew assembleRelease bundleRelease \
             -Pandroid.injected.signing.store.file=keystore.jks \
@@ -52,7 +58,9 @@ jobs:
             --no-daemon
       
       - name: Clean up keystore
-        if: ${{ secrets.KEYSTORE_FILE != '' }}
+        if: env.KEYSTORE_FILE != ''
+        env:
+          KEYSTORE_FILE: ${{ secrets.KEYSTORE_FILE }}
         run: rm -f keystore.jks
       
       - name: Copy artifacts
