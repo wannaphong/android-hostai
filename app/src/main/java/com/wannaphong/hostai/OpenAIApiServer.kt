@@ -509,12 +509,18 @@ class OpenAIApiServer(
         // Get the response output stream
         val outputStream = ctx.res().outputStream
         
+        // Accumulate response for logging (using StringBuffer for thread safety)
+        val accumulatedResponse = StringBuffer()
+        
         try {
             var tokenCount = 0
             
             val job = model.generateStream(prompt, config, sessionId) { token ->
                 try {
                     tokenCount++
+                    
+                    // Accumulate token for logging
+                    accumulatedResponse.append(token)
                     
                     // Format according to OpenAI SSE format for chat
                     val chunk = mapOf(
@@ -598,6 +604,26 @@ class OpenAIApiServer(
                 outputStream.flush()
                 
                 LogManager.i(TAG, "Chat streaming completed with $tokenCount tokens")
+                
+                // Log request if logging is enabled (after streaming completes)
+                val fullResponse = mapOf(
+                    "id" to id,
+                    "object" to "chat.completion",
+                    "created" to created,
+                    "model" to model.getModelName(),
+                    "choices" to listOf(
+                        mapOf(
+                            "index" to 0,
+                            "message" to mapOf(
+                                "role" to "assistant",
+                                "content" to accumulatedResponse.toString()
+                            ),
+                            "finish_reason" to "stop"
+                        )
+                    )
+                )
+                val responseJson = gson.toJson(fullResponse)
+                logRequestIfEnabled(ctx, "/v1/chat/completions", bodyText, responseJson)
             } catch (e: IllegalStateException) {
                 // Handle Jetty output stream state errors gracefully
                 // This can happen if the client disconnected or the stream is already closed
@@ -718,12 +744,18 @@ class OpenAIApiServer(
         // Get the response output stream
         val outputStream = ctx.res().outputStream
         
+        // Accumulate response for logging (using StringBuffer for thread safety)
+        val accumulatedResponse = StringBuffer()
+        
         try {
             var tokenCount = 0
             
             val job = model.generateStream(prompt, config, sessionId) { token ->
                 try {
                     tokenCount++
+                    
+                    // Accumulate token for logging
+                    accumulatedResponse.append(token)
                     
                     // Format according to OpenAI SSE format for completions
                     val chunk = mapOf(
@@ -803,6 +835,23 @@ class OpenAIApiServer(
                 outputStream.flush()
                 
                 LogManager.i(TAG, "Completion streaming completed with $tokenCount tokens")
+                
+                // Log request if logging is enabled (after streaming completes)
+                val fullResponse = mapOf(
+                    "id" to id,
+                    "object" to "text_completion",
+                    "created" to created,
+                    "model" to model.getModelName(),
+                    "choices" to listOf(
+                        mapOf(
+                            "text" to accumulatedResponse.toString(),
+                            "index" to 0,
+                            "finish_reason" to "stop"
+                        )
+                    )
+                )
+                val responseJson = gson.toJson(fullResponse)
+                logRequestIfEnabled(ctx, "/v1/completions", bodyText, responseJson)
             } catch (e: IllegalStateException) {
                 // Handle Jetty output stream state errors gracefully
                 // This can happen if the client disconnected or the stream is already closed
