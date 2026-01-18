@@ -1227,7 +1227,7 @@ class OpenAIApiServer(
         
         // Convert JsonObject to Map<String, Any>
         return extraBodyObj.entrySet().associate { entry ->
-            val value: Any = when {
+            val value: Any? = when {
                 entry.value.isJsonPrimitive -> {
                     val primitive = entry.value.asJsonPrimitive
                     when {
