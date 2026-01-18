@@ -1215,7 +1215,7 @@ class OpenAIApiServer(
      * In a real implementation, this would dynamically create tool instances based on definitions.
      */
     private fun parseTools(toolsArray: com.google.gson.JsonArray?): List<Any>? {
-        if (toolsArray == null || toolsArray.size() == 0) {
+        if (toolsArray == null || toolsArray.isEmpty()) {
             return null
         }
         
