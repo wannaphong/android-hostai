@@ -42,6 +42,9 @@ class SettingsActivity : AppCompatActivity() {
         
         // Load logging setting
         binding.loggingSwitch.isChecked = settingsManager.isLoggingEnabled()
+        
+        // Load backend setting
+        binding.gpuBackendSwitch.isChecked = settingsManager.isGpuBackendEnabled()
     }
     
     private fun setupUI() {
@@ -115,6 +118,9 @@ class SettingsActivity : AppCompatActivity() {
         
         // Save logging setting
         settingsManager.setLoggingEnabled(binding.loggingSwitch.isChecked)
+        
+        // Save backend setting
+        settingsManager.setGpuBackendEnabled(binding.gpuBackendSwitch.isChecked)
         
         Toast.makeText(this, R.string.settings_saved, Toast.LENGTH_SHORT).show()
         

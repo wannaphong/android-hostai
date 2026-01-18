@@ -106,9 +106,9 @@ class ApiServerService : Service() {
         // Now we can safely do heavy operations like model loading
         // If these fail, the service will still be running in foreground
         return try {
-            // Initialize model with ContentResolver
+            // Initialize model with ContentResolver and Context
             LogManager.i(TAG, "Initializing model...")
-            val llamaModel = LlamaModel(contentResolver)
+            val llamaModel = LlamaModel(contentResolver, applicationContext)
             model = llamaModel
             
             // Load the model and check if it succeeded

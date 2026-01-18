@@ -1,6 +1,7 @@
 package com.wannaphong.hostai
 
 import android.content.ContentResolver
+import android.content.Context
 import android.util.Log
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Conversation
@@ -43,7 +44,10 @@ data class GenerationConfig(
  * This implementation uses the LiteRT library which provides
  * native LLM inference optimized for Android/ARM devices with GPU acceleration.
  */
-class LlamaModel(private val contentResolver: ContentResolver) {
+class LlamaModel(
+    private val contentResolver: ContentResolver, 
+    private val context: Context
+) {
     private var modelName = "litert-model"
     private var modelPath: String? = null
     private var isLoaded = false
@@ -52,6 +56,9 @@ class LlamaModel(private val contentResolver: ContentResolver) {
     private var engine: Engine? = null
     private val conversations = ConcurrentHashMap<String, Conversation>()
     private val scope = CoroutineScope(Dispatchers.IO)
+    
+    // Cache SettingsManager to avoid repeated instantiation
+    private val settingsManager by lazy { SettingsManager(context) }
     
     companion object {
         private const val TAG = "LlamaModel"
@@ -87,12 +94,16 @@ class LlamaModel(private val contentResolver: ContentResolver) {
         return try {
             LogManager.i(TAG, "Initializing LiteRT with model: $modelName")
             
-            // Create engine config with CPU backend by default for compatibility
-            // GPU backend can provide better performance on supported devices
-            // To enable GPU: change Backend.CPU to Backend.GPU
+            // Get backend preference from settings
+            val useGpu = settingsManager.isGpuBackendEnabled()
+            val backend = if (useGpu) Backend.GPU else Backend.CPU
+            
+            LogManager.i(TAG, "Using ${if (useGpu) "GPU" else "CPU"} backend for inference")
+            
+            // Create engine config with selected backend
             val engineConfig = EngineConfig(
                 modelPath = modelPath,
-                backend = Backend.CPU,  // Start with CPU for universal compatibility
+                backend = backend,
                 maxNumTokens = DEFAULT_MAX_TOKENS
             )
             
@@ -104,7 +115,7 @@ class LlamaModel(private val contentResolver: ContentResolver) {
             engine = newEngine
             isLoaded = true
             
-            LogManager.i(TAG, "LiteRT engine initialized successfully")
+            LogManager.i(TAG, "LiteRT engine initialized successfully with ${if (useGpu) "GPU" else "CPU"} backend")
             true
         } catch (e: Exception) {
             Log.e(TAG, "Failed to load model", e)
