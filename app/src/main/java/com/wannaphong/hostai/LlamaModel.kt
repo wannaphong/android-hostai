@@ -34,7 +34,6 @@ data class GenerationConfig(
     val topK: Int = 40,
     val topP: Double = 0.95,
     val seed: Int = -1,
-    val tools: List<Any>? = null,  // Tool instances for function calling
     val extraContext: Map<String, Any>? = null  // Extra context for prompt template (from extra_body)
 )
 
@@ -142,28 +141,19 @@ class LlamaModel(private val contentResolver: ContentResolver) {
                     temperature = config.temperature
                 )
                 
-                // Helper properties for cleaner condition checks
-                val hasTools = config.tools?.isNotEmpty() == true
-                val hasExtraContext = config.extraContext?.isNotEmpty() == true
-                
                 // Log extra context if provided (for debugging/future support)
-                if (hasExtraContext) {
+                if (config.extraContext?.isNotEmpty() == true) {
                     LogManager.d(TAG, "Extra context provided: ${config.extraContext}")
                 }
                 
-                // Build conversation config with tools if provided
+                // Build conversation config
                 // Note: extraContext support in ConversationConfig depends on LiteRT-LM version
-                val conversationConfig = if (hasTools) {
-                    // Pass null for system message, tools, and samplerConfig as positional parameters
-                    ConversationConfig(null, config.tools, samplerConfig)
-                } else {
-                    ConversationConfig(null, emptyList(), samplerConfig)
-                }
+                val conversationConfig = ConversationConfig(null, emptyList(), samplerConfig)
                 
                 val newConversation = currentEngine.createConversation(conversationConfig)
                     ?: throw IllegalStateException("createConversation returned null")
                 
-                LogManager.i(TAG, "Created new conversation for session: $sessionId with ${config.tools?.size ?: 0} tools")
+                LogManager.i(TAG, "Created new conversation for session: $sessionId")
                 newConversation
             }
         } catch (e: Exception) {
