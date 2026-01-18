@@ -33,7 +33,9 @@ data class GenerationConfig(
     val temperature: Double = 0.7,
     val topK: Int = 40,
     val topP: Double = 0.95,
-    val seed: Int = -1
+    val seed: Int = -1,
+    val tools: List<Any>? = null,  // Tool instances for function calling
+    val extraContext: Map<String, Any>? = null  // Extra context for prompt template (from extra_body)
 )
 
 /**
@@ -139,11 +141,33 @@ class LlamaModel(private val contentResolver: ContentResolver) {
                     topP = config.topP,
                     temperature = config.temperature
                 )
-                val newConversation = currentEngine.createConversation(
-                    ConversationConfig(samplerConfig = samplerConfig)
-                ) ?: throw IllegalStateException("createConversation returned null")
                 
-                LogManager.i(TAG, "Created new conversation for session: $sessionId")
+                // Helper properties for cleaner condition checks
+                val hasTools = config.tools?.isNotEmpty() == true
+                val hasExtraContext = config.extraContext?.isNotEmpty() == true
+                
+                // Log extra context if provided (for debugging/future support)
+                if (hasExtraContext) {
+                    LogManager.d(TAG, "Extra context provided: ${config.extraContext}")
+                }
+                
+                // Build conversation config with tools if provided
+                // Note: extraContext support in ConversationConfig depends on LiteRT-LM version
+                val conversationConfig = if (hasTools) {
+                    ConversationConfig(
+                        samplerConfig = samplerConfig,
+                        tools = config.tools
+                        // When LiteRT-LM supports extraContext, add:
+                        // extraContext = config.extraContext
+                    )
+                } else {
+                    ConversationConfig(samplerConfig = samplerConfig)
+                }
+                
+                val newConversation = currentEngine.createConversation(conversationConfig)
+                    ?: throw IllegalStateException("createConversation returned null")
+                
+                LogManager.i(TAG, "Created new conversation for session: $sessionId with ${config.tools?.size ?: 0} tools")
                 newConversation
             }
         } catch (e: Exception) {

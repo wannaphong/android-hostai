@@ -839,10 +839,210 @@ curl http://<phone-ip>:8080/v1/chat/completions \
 
 - `messages` (array): Array of message objects with `role` and `content`
   - Roles: "system", "user", "assistant"
+- `tools` (array): Array of tool definitions available to the model (optional)
+- `tool_choice` (string or object): Controls which tools the model can call (optional)
+- `extra_body` (object): Additional JSON properties for model-specific features (optional)
 
 ### Text Completions Specific
 
 - `prompt` (string): The prompt to complete
+
+### Extra Body Parameter
+
+The `extra_body` parameter provides OpenAI API compatibility for passing additional properties to the model. This is useful for:
+- Enabling model-specific features (e.g., thinking mode)
+- Passing custom parameters not in the standard API
+- Supporting extended functionality in compatible models
+
+**Example:**
+```json
+{
+  "model": "llama-model",
+  "messages": [{"role": "user", "content": "Hello"}],
+  "extra_body": {
+    "thinking_mode": true,
+    "custom_parameter": "value"
+  }
+}
+```
+
+The values in `extra_body` are logged and prepared for the underlying model. Actual support depends on the model and LiteRT-LM version in use.
+
+## Function Calling / Tools
+
+HostAI supports function calling (also known as tool use), allowing the model to call predefined functions to fetch data or perform actions. This feature requires a model with tool support (e.g., FunctionGemma).
+
+### Tool Definition Format
+
+Tools are defined using OpenAI-compatible JSON schema:
+
+```json
+{
+  "type": "function",
+  "function": {
+    "name": "get_weather",
+    "description": "Get the current weather for a city",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "city": {
+          "type": "string",
+          "description": "The city name, e.g., San Francisco"
+        },
+        "unit": {
+          "type": "string",
+          "description": "Temperature unit (celsius or fahrenheit)",
+          "enum": ["celsius", "fahrenheit"]
+        }
+      },
+      "required": ["city"]
+    }
+  }
+}
+```
+
+### Example: Chat Completion with Tools
+
+```bash
+curl http://<phone-ip>:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "llama-mock-model",
+    "messages": [
+      {"role": "user", "content": "What is the weather in London?"}
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "get_weather",
+          "description": "Get the current weather for a city",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "city": {
+                "type": "string",
+                "description": "The city name"
+              },
+              "unit": {
+                "type": "string",
+                "description": "Temperature unit",
+                "enum": ["celsius", "fahrenheit"]
+              }
+            },
+            "required": ["city"]
+          }
+        }
+      }
+    ]
+  }'
+```
+
+### Response with Tool Call
+
+When the model decides to call a tool, the response will include a `tool_calls` array:
+
+```json
+{
+  "id": "chatcmpl-1705384800123",
+  "object": "chat.completion",
+  "created": 1705384800,
+  "model": "llama-mock-model",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "id": "call_abc123",
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "arguments": "{\"city\": \"London\", \"unit\": \"celsius\"}"
+            }
+          }
+        ]
+      },
+      "finish_reason": "tool_calls"
+    }
+  ]
+}
+```
+
+### Built-in Example Tools
+
+HostAI includes example tools for demonstration:
+
+1. **get_weather**: Get current weather for a city
+   - Parameters: `city` (required), `country` (optional), `unit` (optional, default: celsius)
+
+2. **sum**: Calculate the sum of a list of numbers
+   - Parameters: `numbers` (required, array of numbers)
+
+3. **get_current_time**: Get the current time in a timezone
+   - Parameters: `timezone` (optional, default: UTC)
+
+### Python Example with Tools
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://<phone-ip>:8080/v1",
+    api_key="not-needed"
+)
+
+# Define tools
+tools = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_weather",
+            "description": "Get the current weather for a city",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "city": {
+                        "type": "string",
+                        "description": "The city name"
+                    },
+                    "unit": {
+                        "type": "string",
+                        "enum": ["celsius", "fahrenheit"]
+                    }
+                },
+                "required": ["city"]
+            }
+        }
+    }
+]
+
+# Send request with tools
+response = client.chat.completions.create(
+    model="llama-mock-model",
+    messages=[
+        {"role": "user", "content": "What's the weather in Paris?"}
+    ],
+    tools=tools
+)
+
+# Check if model called a tool
+if response.choices[0].message.tool_calls:
+    tool_call = response.choices[0].message.tool_calls[0]
+    print(f"Model called: {tool_call.function.name}")
+    print(f"Arguments: {tool_call.function.arguments}")
+```
+
+### Notes on Tool Support
+
+- Tool calling requires a model trained to support function calling (e.g., FunctionGemma)
+- The model automatically decides when to use tools based on the user's query
+- Tool execution happens on the server side using the example tool implementations
+- Tools are session-specific: when a session is created with tools, those tools remain available for all subsequent requests in that session
+- To use different tools for a session, clear the session first using `DELETE /v1/sessions/{sessionId}`
+- Currently uses built-in example tools; future versions may support custom tool definitions
 
 ## Error Handling
 
