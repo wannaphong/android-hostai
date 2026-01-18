@@ -157,7 +157,7 @@ class LlamaModel(private val contentResolver: ContentResolver) {
                     // Pass null for system message, tools, and samplerConfig as positional parameters
                     ConversationConfig(null, config.tools, samplerConfig)
                 } else {
-                    ConversationConfig(null, null, samplerConfig)
+                    ConversationConfig(null, emptyList(), samplerConfig)
                 }
                 
                 val newConversation = currentEngine.createConversation(conversationConfig)
