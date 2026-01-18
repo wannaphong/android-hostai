@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.coordinatorlayout.widget.CoordinatorLayout 
+    xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
@@ -7,139 +8,117 @@
     android:background="?android:attr/colorBackground"
     tools:context=".SettingsActivity">
 
-    <LinearLayout
+    <com.google.android.material.appbar.AppBarLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="16dp">
+        android:background="@android:color/transparent"
+        app:elevation="0dp">
 
-        <!-- Port Settings Card -->
-        <com.google.android.material.card.MaterialCardView
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/topAppBar"
+            android:layout_width="match_parent"
+            android:layout_height="?attr/actionBarSize"
+            app:title="@string/settings"
+            app:navigationIcon="@drawable/ic_launcher_foreground"
+            app:titleCentered="true" />
+    </com.google.android.material.appbar.AppBarLayout>
+
+    <androidx.core.widget.NestedScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior">
+
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp"
-            app:cardElevation="2dp"
-            app:cardCornerRadius="16dp">
+            android:orientation="vertical"
+            android:padding="16dp">
 
-            <LinearLayout
+            <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="20dp">
+                android:layout_marginBottom="16dp"
+                style="@style/Widget.HostAI.CardView">
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/port_settings"
-                    android:textSize="18sp"
-                    android:textStyle="bold"
-                    android:textColor="?attr/colorOnSurface" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/port_settings_desc"
-                    android:textSize="14sp"
-                    android:textColor="?attr/colorOnSurface"
-                    android:alpha="0.7"
-                    android:layout_marginTop="4dp" />
-
-                <com.google.android.material.textfield.TextInputLayout
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="16dp"
-                    android:hint="@string/port_hint">
+                    android:orientation="vertical"
+                    android:padding="20dp">
 
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/portEditText"
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/port_settings"
+                        android:textSize="18sp"
+                        android:textStyle="bold" />
+
+                    <com.google.android.material.textfield.TextInputLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:inputType="number"
-                        android:maxLength="5" />
-                </com.google.android.material.textfield.TextInputLayout>
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
+                        android:layout_marginTop="16dp"
+                        android:hint="@string/port_hint"
+                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
 
-        <!-- Memory Usage Card -->
-        <com.google.android.material.card.MaterialCardView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp"
-            app:cardElevation="2dp"
-            app:cardCornerRadius="16dp">
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/portEditText"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="number"
+                            android:maxLength="5" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
 
-            <LinearLayout
+            <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="20dp">
+                android:layout_marginBottom="16dp"
+                style="@style/Widget.HostAI.CardView">
 
-                <TextView
-                    android:layout_width="wrap_content"
+                <LinearLayout
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="@string/memory_usage"
-                    android:textSize="18sp"
-                    android:textStyle="bold"
-                    android:textColor="?attr/colorOnSurface" />
+                    android:orientation="vertical"
+                    android:padding="20dp">
 
-                <TextView
-                    android:id="@+id/memoryUsageText"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/memory_loading"
-                    android:textSize="16sp"
-                    android:textColor="?attr/colorOnSurface"
-                    android:layout_marginTop="12dp"
-                    android:fontFamily="monospace" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/memory_usage"
+                        android:textSize="18sp"
+                        android:textStyle="bold" />
 
-                <Button
-                    android:id="@+id/refreshMemoryButton"
-                    android:layout_width="wrap_content"
-                    android:layout_height="48dp"
-                    android:text="@string/refresh_memory"
-                    android:textSize="14sp"
-                    android:layout_marginTop="12dp"
-                    style="@style/Widget.HostAI.Button.Outlined" />
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
+                    <TextView
+                        android:id="@+id/memoryUsageText"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/memory_loading"
+                        android:layout_marginTop="12dp"
+                        android:fontFamily="monospace" />
 
-        <!-- Backend Settings Card -->
-        <com.google.android.material.card.MaterialCardView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp"
-            app:cardElevation="2dp"
-            app:cardCornerRadius="16dp">
+                    <Button
+                        android:id="@+id/refreshMemoryButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/refresh_memory"
+                        android:layout_marginTop="12dp"
+                        style="@style/Widget.HostAI.Button.Outlined" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
 
-            <LinearLayout
+            <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="20dp">
+                android:layout_marginBottom="16dp"
+                style="@style/Widget.HostAI.CardView">
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/backend_settings"
-                    android:textSize="18sp"
-                    android:textStyle="bold"
-                    android:textColor="?attr/colorOnSurface" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/backend_settings_desc"
-                    android:textSize="14sp"
-                    android:textColor="?attr/colorOnSurface"
-                    android:alpha="0.7"
-                    android:layout_marginTop="4dp" />
-
-                <!-- GPU Backend Toggle -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
-                    android:layout_marginTop="16dp">
+                    android:padding="20dp"
+                    android:gravity="center_vertical">
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -152,317 +131,117 @@
                             android:layout_height="wrap_content"
                             android:text="@string/use_gpu_backend"
                             android:textSize="16sp"
-                            android:textColor="?attr/colorOnSurface" />
+                            android:textStyle="bold" />
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="@string/use_gpu_backend_desc"
                             android:textSize="12sp"
-                            android:textColor="?attr/colorOnSurface"
-                            android:alpha="0.6"
-                            android:layout_marginTop="2dp" />
+                            android:alpha="0.7" />
                     </LinearLayout>
 
                     <com.google.android.material.switchmaterial.SwitchMaterial
                         android:id="@+id/gpuBackendSwitch"
                         android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_gravity="center_vertical" />
+                        android:layout_height="wrap_content" />
                 </LinearLayout>
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
+            </com.google.android.material.card.MaterialCardView>
 
-        <!-- Features Toggle Card -->
-        <com.google.android.material.card.MaterialCardView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp"
-            app:cardElevation="2dp"
-            app:cardCornerRadius="16dp">
-
-            <LinearLayout
+            <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="20dp">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/features"
-                    android:textSize="18sp"
-                    android:textStyle="bold"
-                    android:textColor="?attr/colorOnSurface" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/features_desc"
-                    android:textSize="14sp"
-                    android:textColor="?attr/colorOnSurface"
-                    android:alpha="0.7"
-                    android:layout_marginTop="4dp" />
-
-                <!-- Web Chat UI Toggle -->
+                android:layout_marginBottom="16dp"
+                style="@style/Widget.HostAI.CardView">
+                
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:layout_marginTop="16dp">
-
-                    <LinearLayout
-                        android:layout_width="0dp"
+                    android:orientation="vertical"
+                    android:padding="20dp">
+                    
+                     <LinearLayout
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical">
-
+                        android:orientation="horizontal">
+                        
                         <TextView
-                            android:layout_width="wrap_content"
+                            android:layout_width="0dp"
                             android:layout_height="wrap_content"
-                            android:text="@string/web_chat_ui"
+                            android:layout_weight="1"
+                            android:text="@string/enable_logging"
                             android:textSize="16sp"
-                            android:textColor="?attr/colorOnSurface" />
+                            android:textStyle="bold" />
 
-                        <TextView
+                        <com.google.android.material.switchmaterial.SwitchMaterial
+                            android:id="@+id/loggingSwitch"
                             android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/web_chat_ui_desc"
-                            android:textSize="12sp"
-                            android:textColor="?attr/colorOnSurface"
-                            android:alpha="0.6"
-                            android:layout_marginTop="2dp" />
+                            android:layout_height="wrap_content" />
                     </LinearLayout>
-
-                    <com.google.android.material.switchmaterial.SwitchMaterial
-                        android:id="@+id/webChatSwitch"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_gravity="center_vertical" />
-                </LinearLayout>
-
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:background="@color/divider"
-                    android:layout_marginTop="16dp" />
-
-                <!-- Text Completions Toggle -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:layout_marginTop="16dp">
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/text_completions"
-                            android:textSize="16sp"
-                            android:textColor="?attr/colorOnSurface" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/text_completions_desc"
-                            android:textSize="12sp"
-                            android:textColor="?attr/colorOnSurface"
-                            android:alpha="0.6"
-                            android:layout_marginTop="2dp" />
-                    </LinearLayout>
-
-                    <com.google.android.material.switchmaterial.SwitchMaterial
-                        android:id="@+id/textCompletionsSwitch"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_gravity="center_vertical" />
-                </LinearLayout>
-
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:background="@color/divider"
-                    android:layout_marginTop="16dp" />
-
-                <!-- Chat Completions Toggle -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:layout_marginTop="16dp">
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/chat_completions"
-                            android:textSize="16sp"
-                            android:textColor="?attr/colorOnSurface" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/chat_completions_desc"
-                            android:textSize="12sp"
-                            android:textColor="?attr/colorOnSurface"
-                            android:alpha="0.6"
-                            android:layout_marginTop="2dp" />
-                    </LinearLayout>
-
-                    <com.google.android.material.switchmaterial.SwitchMaterial
-                        android:id="@+id/chatCompletionsSwitch"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_gravity="center_vertical" />
-                </LinearLayout>
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
-        <!-- Request Logging Card -->
-        <com.google.android.material.card.MaterialCardView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp"
-            app:cardElevation="2dp"
-            app:cardCornerRadius="16dp">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="20dp">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/request_logging"
-                    android:textSize="18sp"
-                    android:textStyle="bold"
-                    android:textColor="?attr/colorOnSurface" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/request_logging_desc"
-                    android:textSize="14sp"
-                    android:textColor="?attr/colorOnSurface"
-                    android:alpha="0.7"
-                    android:layout_marginTop="4dp" />
-
-                <!-- Logging Toggle -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:layout_marginTop="16dp">
-
+                    
                     <TextView
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="@string/enable_logging"
-                        android:textSize="16sp"
-                        android:textColor="?attr/colorOnSurface"
-                        android:layout_gravity="center_vertical" />
-
-                    <com.google.android.material.switchmaterial.SwitchMaterial
-                        android:id="@+id/loggingSwitch"
+                        android:id="@+id/logsCountText"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_gravity="center_vertical" />
+                        android:text="@string/no_logs_recorded"
+                        android:layout_marginTop="8dp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:layout_marginTop="16dp">
+
+                        <Button
+                            android:id="@+id/exportLogsButton"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/export_logs_json"
+                            android:layout_marginEnd="8dp"
+                            style="@style/Widget.HostAI.Button.Outlined" />
+
+                        <Button
+                            android:id="@+id/clearLogsButton"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/clear_logs_button"
+                            android:layout_marginStart="8dp"
+                            style="@style/Widget.HostAI.Button.Outlined" />
+                    </LinearLayout>
                 </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
 
-                <TextView
-                    android:id="@+id/logsCountText"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/no_logs_recorded"
-                    android:textSize="14sp"
-                    android:textColor="?attr/colorOnSurface"
-                    android:alpha="0.7"
-                    android:layout_marginTop="12dp" />
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:layout_marginTop="12dp">
-
-                    <Button
-                        android:id="@+id/exportLogsButton"
-                        android:layout_width="0dp"
-                        android:layout_height="48dp"
-                        android:layout_weight="1"
-                        android:layout_marginEnd="8dp"
-                        android:text="@string/export_logs_json"
-                        android:textSize="14sp"
-                        style="@style/Widget.HostAI.Button.Outlined" />
-
-                    <Button
-                        android:id="@+id/clearLogsButton"
-                        android:layout_width="0dp"
-                        android:layout_height="48dp"
-                        android:layout_weight="1"
-                        android:layout_marginStart="8dp"
-                        android:text="@string/clear_logs_button"
-                        android:textSize="14sp"
-                        style="@style/Widget.HostAI.Button.Outlined" />
-                </LinearLayout>
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
-        <!-- Licenses Card -->
-        <com.google.android.material.card.MaterialCardView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp"
-            app:cardElevation="2dp"
-            app:cardCornerRadius="16dp">
-
-            <LinearLayout
+            <Button
+                android:id="@+id/saveSettingsButton"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="20dp">
+                android:text="@string/save_settings"
+                android:layout_marginTop="8dp"
+                style="@style/Widget.Material3.Button" />
+                
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/webChatSwitch"
+                    android:layout_width="0dp"
+                    android:layout_height="0dp"
+                    android:visibility="gone" />
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/textCompletionsSwitch"
+                    android:layout_width="0dp"
+                    android:layout_height="0dp"
+                    android:visibility="gone" />
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/chatCompletionsSwitch"
+                    android:layout_width="0dp"
+                    android:layout_height="0dp"
+                    android:visibility="gone" />
+            <Button
+                android:id="@+id/viewLicensesButton"
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:visibility="gone" />
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/licenses"
-                    android:textSize="18sp"
-                    android:textStyle="bold"
-                    android:textColor="?attr/colorOnSurface" />
-
-                <Button
-                    android:id="@+id/viewLicensesButton"
-                    android:layout_width="match_parent"
-                    android:layout_height="56dp"
-                    android:text="@string/view_licenses"
-                    android:textSize="14sp"
-                    android:layout_marginTop="12dp"
-                    style="@style/Widget.HostAI.Button.Outlined" />
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
-        <!-- Save Button -->
-        <Button
-            android:id="@+id/saveSettingsButton"
-            android:layout_width="match_parent"
-            android:layout_height="56dp"
-            android:text="@string/save_settings"
-            android:textSize="16sp"
-            android:textStyle="bold"
-            android:layout_marginTop="8dp" />
-    </LinearLayout>
-</androidx.core.widget.NestedScrollView>
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+</androidx.coordinatorlayout.widget.CoordinatorLayout>
