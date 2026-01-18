@@ -129,13 +129,17 @@ data: [DONE]
 
 #### Chat Completions with Multimodal Content
 
-HostAI supports multimodal inputs (images and audio) following the OpenAI API format. Message content can be either a string or an array of content parts.
+HostAI now supports native multimodal inputs (images and audio) using LiteRT-LM 0.8.0's vision and audio backends. Message content can be either a string or an array of content parts.
 
-**Note:** For text-based models, multimodal content is represented as text descriptions. Vision/audio-capable models would process the actual media data.
+**Requirements:**
+- Use a multimodal model (e.g., Gemma-3N-E2B, Gemma-3N-E4B)
+- Images: Base64 encoded data only (URLs not supported yet)
+- Audio: Base64 encoded data with format specification
+- Vision processing uses GPU backend, audio uses CPU backend
 
 **Multimodal with Images:**
 
-Send images as part of the conversation using either base64 encoding or URLs:
+Send base64-encoded images as part of the conversation:
 
 ```bash
 curl http://<phone-ip>:8080/v1/chat/completions \
@@ -153,7 +157,7 @@ curl http://<phone-ip>:8080/v1/chat/completions \
           {
             "type": "image_url",
             "image_url": {
-              "url": "https://example.com/image.jpg",
+              "url": "data:image/jpeg;base64,/9j/4AAQSkZJRg...",
               "detail": "high"
             }
           }
@@ -163,7 +167,7 @@ curl http://<phone-ip>:8080/v1/chat/completions \
   }'
 ```
 
-**Using base64 encoded images:**
+**Important:** Image URLs (http://, https://) are not yet supported. Use base64 encoding:
 
 ```bash
 curl http://<phone-ip>:8080/v1/chat/completions \
@@ -193,7 +197,7 @@ curl http://<phone-ip>:8080/v1/chat/completions \
 
 **Multimodal with Audio:**
 
-Send audio input as part of the conversation:
+Send base64-encoded audio input as part of the conversation:
 
 ```bash
 curl http://<phone-ip>:8080/v1/chat/completions \
@@ -234,7 +238,7 @@ The response follows the standard chat completion format:
       "index": 0,
       "message": {
         "role": "assistant",
-        "content": "Based on the image/audio content..."
+        "content": "Based on the image/audio content, I can see..."
       },
       "finish_reason": "stop"
     }
@@ -246,6 +250,16 @@ The response follows the standard chat completion format:
   }
 }
 ```
+
+**Multimodal Model Support:**
+
+To use multimodal features, you need a model that supports vision/audio:
+- **Gemma-3N-E2B**: Vision and audio support (2.9 GB, 4-bit quantized)
+- **Gemma-3N-E4B**: Vision and audio support (4.2 GB, 4-bit quantized)
+
+Download from [HuggingFace LiteRT Community](https://huggingface.co/litert-community) or:
+- [Gemma-3N-E2B](https://huggingface.co/google/gemma-3n-E2B-it-litert-lm-preview)
+- [Gemma-3N-E4B](https://huggingface.co/google/gemma-3n-E4B-it-litert-lm-preview)
 
 **Content Detail Levels for Images:**
 - `low`: Lower resolution (512x512), faster processing

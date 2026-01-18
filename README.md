@@ -148,14 +148,14 @@ See [API_USAGE.md](API_USAGE.md) for more examples and session management endpoi
 
 ### Multimodal Support
 
-HostAI supports multimodal inputs (images and audio) following the OpenAI API format. You can include images and audio in your chat messages:
+HostAI now supports native multimodal inputs (images and audio) using LiteRT-LM 0.8.0's vision and audio backends. You can include images and audio in your chat messages following the OpenAI API format:
 
 ```bash
-# Example with image URL
+# Example with base64-encoded image
 curl http://<phone-ip>:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "llama-model",
+    "model": "gemma-3n-model",
     "messages": [
       {
         "role": "user",
@@ -164,7 +164,7 @@ curl http://<phone-ip>:8080/v1/chat/completions \
           {
             "type": "image_url",
             "image_url": {
-              "url": "https://example.com/image.jpg"
+              "url": "data:image/jpeg;base64,/9j/4AAQSkZJRg..."
             }
           }
         ]
@@ -173,7 +173,12 @@ curl http://<phone-ip>:8080/v1/chat/completions \
   }'
 ```
 
-**Note:** For text-based models, multimodal content is represented as text descriptions. Vision/audio-capable models would process the actual media data. See [API_USAGE.md](API_USAGE.md) for detailed multimodal examples including base64 encoding and audio inputs.
+**Requirements:**
+- Use a multimodal model like [Gemma-3N-E2B](https://huggingface.co/google/gemma-3n-E2B-it-litert-lm-preview) or [Gemma-3N-E4B](https://huggingface.co/google/gemma-3n-E4B-it-litert-lm-preview)
+- Images must be base64 encoded (URLs not yet supported)
+- Vision processing uses GPU, audio processing uses CPU
+
+See [API_USAGE.md](API_USAGE.md) for detailed multimodal examples including audio inputs and Python code with base64 encoding.
 
 ### Example API Call
 
