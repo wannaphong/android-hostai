@@ -307,7 +307,7 @@ class LlamaModel(
             }
             
             // Send message with multimodal contents and get response synchronously
-            val userMessage = Message.of(contents)
+            val userMessage = Message.of(*contents.toTypedArray())
             val response = sessionConversation.sendMessage(userMessage)
             
             val result = response?.toString() ?: ""
@@ -567,7 +567,7 @@ class LlamaModel(
                         }
                     }
                     
-                    val userMessage = Message.of(contents)
+                    val userMessage = Message.of(*contents.toTypedArray())
                     sessionConversation.sendMessageAsync(userMessage, callback)
                 }
             } catch (e: Exception) {
