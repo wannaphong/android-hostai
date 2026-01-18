@@ -6,7 +6,7 @@
     
     <!-- Central Brain/AI icon -->
     <path
-        android:pathData="M54,30 C46,30 40,36 40,44 C40,48 42,52 45,54 C43,56 42,59 42,62 C42,68 47,73 53,73 L55,73 C61,73 66,68 66,62 C66,59 65,56 63,54 C66,52 68,48 68,44 C68,36 62,30 54,30 Z"
+        android:pathData="M 54,30 C 46,30 40,36 40,44 C 40,48 42,52 45,54 C 43,56 42,59 42,62 C 42,68 47,73 53,73 L 55,73 C 61,73 66,68 66,62 C 66,59 65,56 63,54 C 66,52 68,48 68,44 C 68,36 62,30 54,30 Z"
         android:fillColor="#FFFFFF"
         android:strokeWidth="3"
         android:strokeColor="#FFFFFF"/>
