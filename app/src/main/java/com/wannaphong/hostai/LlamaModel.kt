@@ -44,7 +44,10 @@ data class GenerationConfig(
  * This implementation uses the LiteRT library which provides
  * native LLM inference optimized for Android/ARM devices with GPU acceleration.
  */
-class LlamaModel(private val contentResolver: ContentResolver, private val context: Context) {
+class LlamaModel(
+    private val contentResolver: ContentResolver, 
+    private val context: Context
+) {
     private var modelName = "litert-model"
     private var modelPath: String? = null
     private var isLoaded = false
@@ -53,6 +56,9 @@ class LlamaModel(private val contentResolver: ContentResolver, private val conte
     private var engine: Engine? = null
     private val conversations = ConcurrentHashMap<String, Conversation>()
     private val scope = CoroutineScope(Dispatchers.IO)
+    
+    // Cache SettingsManager to avoid repeated instantiation
+    private val settingsManager by lazy { SettingsManager(context) }
     
     companion object {
         private const val TAG = "LlamaModel"
@@ -89,7 +95,6 @@ class LlamaModel(private val contentResolver: ContentResolver, private val conte
             LogManager.i(TAG, "Initializing LiteRT with model: $modelName")
             
             // Get backend preference from settings
-            val settingsManager = SettingsManager(context)
             val useGpu = settingsManager.isGpuBackendEnabled()
             val backend = if (useGpu) Backend.GPU else Backend.CPU
             
