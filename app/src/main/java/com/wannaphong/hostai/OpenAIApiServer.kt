@@ -435,7 +435,20 @@ class OpenAIApiServer(
         
         val promptTokens = when (contents) {
             is String -> contents.split(" ").size
-            else -> 50  // Rough estimate for multimodal content
+            else -> {
+                // Estimate tokens for multimodal content
+                // Count text parts + fixed cost per image/audio
+                @Suppress("UNCHECKED_CAST")
+                val contentList = contents as List<Content>
+                contentList.sumOf { content ->
+                    when (content) {
+                        is Content.Text -> content.toString().split(" ").size
+                        is Content.ImageBytes -> 85  // Typical image token cost (based on OpenAI's 85 tokens per low-detail image)
+                        is Content.AudioBytes -> 50  // Estimate for audio
+                        else -> 10
+                    }
+                }
+            }
         }
         val completionTokens = completion.split(" ").size
         
@@ -619,12 +632,8 @@ class OpenAIApiServer(
                             )
                         )
                         
-                        // Write SSE format: "data: {json}
-
-"
-                        val sseData = "data: ${gson.toJson(chunk)}
-
-"
+                        // Write SSE format: "data: {json}\n\n"
+                        val sseData = "data: ${gson.toJson(chunk)}\n\n"
                         outputStream.write(sseData.toByteArray(Charsets.UTF_8))
                         outputStream.flush()
                         
