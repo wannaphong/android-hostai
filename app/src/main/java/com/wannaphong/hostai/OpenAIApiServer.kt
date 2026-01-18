@@ -1219,7 +1219,7 @@ class OpenAIApiServer(
      * that can be used for model-specific features like thinking mode.
      */
     private fun parseExtraBody(extraBodyObj: com.google.gson.JsonObject?): Map<String, Any>? {
-        if (extraBodyObj == null || extraBodyObj.size() == 0) {
+        if (extraBodyObj == null || extraBodyObj.isEmpty()) {
             return null
         }
         
@@ -1232,16 +1232,21 @@ class OpenAIApiServer(
                     val primitive = entry.value.asJsonPrimitive
                     when {
                         primitive.isBoolean -> primitive.asBoolean
-                        primitive.isNumber -> primitive.asNumber
+                        primitive.isNumber -> {
+                            // Convert to Double for consistency and to avoid precision issues
+                            primitive.asDouble
+                        }
                         primitive.isString -> primitive.asString
                         else -> primitive.asString
                     }
                 }
-                entry.value.isJsonNull -> "null"
+                entry.value.isJsonNull -> null as Any?
+                entry.value.isJsonArray -> entry.value.toString()
+                entry.value.isJsonObject -> entry.value.toString()
                 else -> entry.value.toString()
             }
             entry.key to value
-        }
+        }.filterValues { it != null } as Map<String, Any>
     }
     
     /**

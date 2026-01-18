@@ -142,34 +142,26 @@ class LlamaModel(private val contentResolver: ContentResolver) {
                     temperature = config.temperature
                 )
                 
-                // Build conversation config with tools and extraContext if provided
-                val conversationConfig = when {
-                    config.tools != null && config.tools.isNotEmpty() && config.extraContext != null && config.extraContext.isNotEmpty() -> {
-                        LogManager.d(TAG, "Creating conversation with tools and extra context: ${config.extraContext}")
-                        // Note: extraContext support in ConversationConfig depends on LiteRT-LM version
-                        // For now, we log it. If the API supports it, uncomment the line below:
-                        // ConversationConfig(samplerConfig = samplerConfig, tools = config.tools, extraContext = config.extraContext)
-                        ConversationConfig(
-                            samplerConfig = samplerConfig,
-                            tools = config.tools
-                        )
-                    }
-                    config.tools != null && config.tools.isNotEmpty() -> {
-                        ConversationConfig(
-                            samplerConfig = samplerConfig,
-                            tools = config.tools
-                        )
-                    }
-                    config.extraContext != null && config.extraContext.isNotEmpty() -> {
-                        LogManager.d(TAG, "Extra context provided: ${config.extraContext}")
-                        // Note: extraContext support in ConversationConfig depends on LiteRT-LM version
-                        // For now, we log it. If the API supports it, uncomment the line below:
-                        // ConversationConfig(samplerConfig = samplerConfig, extraContext = config.extraContext)
-                        ConversationConfig(samplerConfig = samplerConfig)
-                    }
-                    else -> {
-                        ConversationConfig(samplerConfig = samplerConfig)
-                    }
+                // Helper properties for cleaner condition checks
+                val hasTools = config.tools?.isNotEmpty() == true
+                val hasExtraContext = config.extraContext?.isNotEmpty() == true
+                
+                // Log extra context if provided (for debugging/future support)
+                if (hasExtraContext) {
+                    LogManager.d(TAG, "Extra context provided: ${config.extraContext}")
+                }
+                
+                // Build conversation config with tools if provided
+                // Note: extraContext support in ConversationConfig depends on LiteRT-LM version
+                val conversationConfig = if (hasTools) {
+                    ConversationConfig(
+                        samplerConfig = samplerConfig,
+                        tools = config.tools
+                        // When LiteRT-LM supports extraContext, add:
+                        // extraContext = config.extraContext
+                    )
+                } else {
+                    ConversationConfig(samplerConfig = samplerConfig)
                 }
                 
                 val newConversation = currentEngine.createConversation(conversationConfig)
