@@ -154,14 +154,10 @@ class LlamaModel(private val contentResolver: ContentResolver) {
                 // Build conversation config with tools if provided
                 // Note: extraContext support in ConversationConfig depends on LiteRT-LM version
                 val conversationConfig = if (hasTools) {
-                    ConversationConfig(
-                        samplerConfig = samplerConfig,
-                        tools = config.tools
-                        // When LiteRT-LM supports extraContext, add:
-                        // extraContext = config.extraContext
-                    )
+                    // Pass tools as positional parameter (not named parameter)
+                    ConversationConfig(samplerConfig, config.tools)
                 } else {
-                    ConversationConfig(samplerConfig = samplerConfig)
+                    ConversationConfig(samplerConfig)
                 }
                 
                 val newConversation = currentEngine.createConversation(conversationConfig)
