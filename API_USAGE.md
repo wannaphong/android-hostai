@@ -841,10 +841,32 @@ curl http://<phone-ip>:8080/v1/chat/completions \
   - Roles: "system", "user", "assistant"
 - `tools` (array): Array of tool definitions available to the model (optional)
 - `tool_choice` (string or object): Controls which tools the model can call (optional)
+- `extra_body` (object): Additional JSON properties for model-specific features (optional)
 
 ### Text Completions Specific
 
 - `prompt` (string): The prompt to complete
+
+### Extra Body Parameter
+
+The `extra_body` parameter provides OpenAI API compatibility for passing additional properties to the model. This is useful for:
+- Enabling model-specific features (e.g., thinking mode)
+- Passing custom parameters not in the standard API
+- Supporting extended functionality in compatible models
+
+**Example:**
+```json
+{
+  "model": "llama-model",
+  "messages": [{"role": "user", "content": "Hello"}],
+  "extra_body": {
+    "thinking_mode": true,
+    "custom_parameter": "value"
+  }
+}
+```
+
+The values in `extra_body` are logged and prepared for the underlying model. Actual support depends on the model and LiteRT-LM version in use.
 
 ## Function Calling / Tools
 

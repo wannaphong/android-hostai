@@ -34,7 +34,8 @@ data class GenerationConfig(
     val topK: Int = 40,
     val topP: Double = 0.95,
     val seed: Int = -1,
-    val tools: List<Any>? = null  // Tool instances for function calling
+    val tools: List<Any>? = null,  // Tool instances for function calling
+    val extraContext: Map<String, Any>? = null  // Extra context for prompt template (from extra_body)
 )
 
 /**
@@ -141,14 +142,34 @@ class LlamaModel(private val contentResolver: ContentResolver) {
                     temperature = config.temperature
                 )
                 
-                // Build conversation config with tools if provided
-                val conversationConfig = if (config.tools != null && config.tools.isNotEmpty()) {
-                    ConversationConfig(
-                        samplerConfig = samplerConfig,
-                        tools = config.tools
-                    )
-                } else {
-                    ConversationConfig(samplerConfig = samplerConfig)
+                // Build conversation config with tools and extraContext if provided
+                val conversationConfig = when {
+                    config.tools != null && config.tools.isNotEmpty() && config.extraContext != null && config.extraContext.isNotEmpty() -> {
+                        LogManager.d(TAG, "Creating conversation with tools and extra context: ${config.extraContext}")
+                        // Note: extraContext support in ConversationConfig depends on LiteRT-LM version
+                        // For now, we log it. If the API supports it, uncomment the line below:
+                        // ConversationConfig(samplerConfig = samplerConfig, tools = config.tools, extraContext = config.extraContext)
+                        ConversationConfig(
+                            samplerConfig = samplerConfig,
+                            tools = config.tools
+                        )
+                    }
+                    config.tools != null && config.tools.isNotEmpty() -> {
+                        ConversationConfig(
+                            samplerConfig = samplerConfig,
+                            tools = config.tools
+                        )
+                    }
+                    config.extraContext != null && config.extraContext.isNotEmpty() -> {
+                        LogManager.d(TAG, "Extra context provided: ${config.extraContext}")
+                        // Note: extraContext support in ConversationConfig depends on LiteRT-LM version
+                        // For now, we log it. If the API supports it, uncomment the line below:
+                        // ConversationConfig(samplerConfig = samplerConfig, extraContext = config.extraContext)
+                        ConversationConfig(samplerConfig = samplerConfig)
+                    }
+                    else -> {
+                        ConversationConfig(samplerConfig = samplerConfig)
+                    }
                 }
                 
                 val newConversation = currentEngine.createConversation(conversationConfig)

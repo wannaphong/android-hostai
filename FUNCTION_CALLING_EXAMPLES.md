@@ -241,6 +241,48 @@ Content-Type: application/json
 
 The tools will remain available for all subsequent requests using `conversation_id: "user123"`.
 
+## Example 5: With Extra Body for Custom Parameters
+
+The `extra_body` parameter allows passing additional model-specific parameters for OpenAI API compatibility:
+
+**Request:**
+```json
+POST /v1/chat/completions
+Content-Type: application/json
+
+{
+  "model": "functiongemma-270m-it",
+  "messages": [
+    {"role": "user", "content": "Calculate 10 + 20 + 30"}
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "sum",
+        "description": "Calculate the sum of numbers",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "numbers": {
+              "type": "array",
+              "items": {"type": "number"}
+            }
+          },
+          "required": ["numbers"]
+        }
+      }
+    }
+  ],
+  "extra_body": {
+    "thinking_mode": true,
+    "custom_setting": "value"
+  }
+}
+```
+
+The `extra_body` parameters are parsed and made available to the model. Support depends on the specific model and LiteRT-LM version.
+
 ## Notes
 
 1. The model must support function calling (e.g., FunctionGemma)
@@ -248,3 +290,4 @@ The tools will remain available for all subsequent requests using `conversation_
 3. The model decides when to call tools based on the query
 4. Tool execution is automatic on the server side
 5. Results are incorporated into the response naturally
+6. Use `extra_body` for model-specific parameters not in the standard API

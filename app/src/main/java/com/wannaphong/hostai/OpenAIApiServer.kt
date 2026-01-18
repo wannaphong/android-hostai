@@ -1199,14 +1199,49 @@ class OpenAIApiServer(
         // Parse tools if provided
         val toolInstances = parseTools(request.getAsJsonArray("tools"))
         
+        // Parse extra_body for additional context (OpenAI API compatibility)
+        val extraContext = parseExtraBody(request.getAsJsonObject("extra_body"))
+        
         return GenerationConfig(
             maxTokens = request.get("max_tokens")?.asInt ?: 100,
             temperature = request.get("temperature")?.asDouble ?: 0.7,
             topK = request.get("top_k")?.asInt ?: 40,
             topP = request.get("top_p")?.asDouble ?: 0.95,
             seed = request.get("seed")?.asInt ?: -1,
-            tools = toolInstances
+            tools = toolInstances,
+            extraContext = extraContext
         )
+    }
+    
+    /**
+     * Parse extra_body from request for OpenAI API compatibility.
+     * The extra_body parameter allows passing additional JSON properties 
+     * that can be used for model-specific features like thinking mode.
+     */
+    private fun parseExtraBody(extraBodyObj: com.google.gson.JsonObject?): Map<String, Any>? {
+        if (extraBodyObj == null || extraBodyObj.size() == 0) {
+            return null
+        }
+        
+        LogManager.d(TAG, "Extra body provided in request with ${extraBodyObj.size()} properties")
+        
+        // Convert JsonObject to Map<String, Any>
+        return extraBodyObj.entrySet().associate { entry ->
+            val value: Any = when {
+                entry.value.isJsonPrimitive -> {
+                    val primitive = entry.value.asJsonPrimitive
+                    when {
+                        primitive.isBoolean -> primitive.asBoolean
+                        primitive.isNumber -> primitive.asNumber
+                        primitive.isString -> primitive.asString
+                        else -> primitive.asString
+                    }
+                }
+                entry.value.isJsonNull -> "null"
+                else -> entry.value.toString()
+            }
+            entry.key to value
+        }
     }
     
     /**
