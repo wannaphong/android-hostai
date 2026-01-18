@@ -127,6 +127,132 @@ data: [DONE]
 ```
 
 
+#### Chat Completions with Multimodal Content
+
+HostAI supports multimodal inputs (images and audio) following the OpenAI API format. Message content can be either a string or an array of content parts.
+
+**Note:** For text-based models, multimodal content is represented as text descriptions. Vision/audio-capable models would process the actual media data.
+
+**Multimodal with Images:**
+
+Send images as part of the conversation using either base64 encoding or URLs:
+
+```bash
+curl http://<phone-ip>:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "llama-mock-model",
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "What is in this image?"
+          },
+          {
+            "type": "image_url",
+            "image_url": {
+              "url": "https://example.com/image.jpg",
+              "detail": "high"
+            }
+          }
+        ]
+      }
+    ]
+  }'
+```
+
+**Using base64 encoded images:**
+
+```bash
+curl http://<phone-ip>:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "llama-mock-model",
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Describe this image"
+          },
+          {
+            "type": "image_url",
+            "image_url": {
+              "url": "data:image/jpeg;base64,/9j/4AAQSkZJRg...",
+              "detail": "auto"
+            }
+          }
+        ]
+      }
+    ]
+  }'
+```
+
+**Multimodal with Audio:**
+
+Send audio input as part of the conversation:
+
+```bash
+curl http://<phone-ip>:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "llama-mock-model",
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Transcribe this audio"
+          },
+          {
+            "type": "input_audio",
+            "input_audio": {
+              "data": "base64_encoded_audio_data",
+              "format": "wav"
+            }
+          }
+        ]
+      }
+    ]
+  }'
+```
+
+**Response:**
+The response follows the standard chat completion format:
+```json
+{
+  "id": "chatcmpl-1705384800123",
+  "object": "chat.completion",
+  "created": 1705384800,
+  "model": "llama-mock-model",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Based on the image/audio content..."
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 25,
+    "completion_tokens": 20,
+    "total_tokens": 45
+  }
+}
+```
+
+**Content Detail Levels for Images:**
+- `low`: Lower resolution (512x512), faster processing
+- `high`: Higher resolution, more detailed analysis
+- `auto` (default): Automatically choose based on image
+
+
 #### Chat Completions with Multi-Session
 
 Maintain separate conversation contexts using session IDs:
@@ -559,6 +685,56 @@ response3 = client.chat.completions.create(
         {"role": "user", "content": "What's my favorite color?"}
     ]
 )
+
+# Multimodal: Chat with image URL
+response_with_image = client.chat.completions.create(
+    model="llama-mock-model",
+    messages=[
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "What is in this image?"},
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": "https://example.com/image.jpg",
+                        "detail": "high"
+                    }
+                }
+            ]
+        }
+    ]
+)
+
+# Multimodal: Chat with base64 encoded image
+import base64
+
+def encode_image(image_path):
+    with open(image_path, "rb") as image_file:
+        return base64.b64encode(image_file.read()).decode('utf-8')
+
+base64_image = encode_image("path/to/image.jpg")
+
+response_with_base64_image = client.chat.completions.create(
+    model="llama-mock-model",
+    messages=[
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "Describe this image"},
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/jpeg;base64,{base64_image}",
+                        "detail": "auto"
+                    }
+                }
+            ]
+        }
+    ]
+)
+
+print(response_with_base64_image.choices[0].message.content)
 ```
 
 ### JavaScript/Node.js

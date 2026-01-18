@@ -12,13 +12,15 @@ import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Data class to store chat completion information.
+ * Messages are stored as Map<String, Any> to support multimodal content.
+ * Content can be either String (simple text) or List (multimodal content parts).
  */
 data class StoredCompletion(
     val id: String,
     val obj: String,
     val created: Long,
     val model: String,
-    val messages: List<Map<String, String>>,
+    val messages: List<Map<String, Any>>,
     val responseContent: String,
     var metadata: Map<String, Any>?
 )
@@ -428,9 +430,27 @@ class OpenAIApiServer(
         if (store) {
             val messagesList = messages.map { element ->
                 val msgObj = element.asJsonObject
+                val role = msgObj.get("role")?.asString ?: ""
+                val contentElement = msgObj.get("content")
+                
+                // Preserve the original content structure (string or array for multimodal)
+                val content: Any = when {
+                    contentElement == null -> ""
+                    contentElement.isJsonPrimitive && contentElement.asJsonPrimitive.isString -> {
+                        contentElement.asString
+                    }
+                    contentElement.isJsonArray -> {
+                        // Store multimodal content as a list of maps
+                        contentElement.asJsonArray.map { part ->
+                            gson.fromJson(part, Map::class.java) as Map<String, Any>
+                        }
+                    }
+                    else -> contentElement.toString()
+                }
+                
                 mapOf(
-                    "role" to (msgObj.get("role")?.asString ?: ""),
-                    "content" to (msgObj.get("content")?.asString ?: "")
+                    "role" to role,
+                    "content" to content
                 )
             }
             
@@ -863,15 +883,91 @@ class OpenAIApiServer(
         // Note: Javalin manages the output stream lifecycle; don't close it manually
     }
     
+    /**
+     * Build prompt from messages with multimodal support.
+     * Supports both string content and array of content parts (text, image_url, audio).
+     * 
+     * OpenAI multimodal format:
+     * - content can be a string: "Hello"
+     * - content can be an array: [{"type": "text", "text": "Hello"}, {"type": "image_url", "image_url": {"url": "..."}}]
+     */
     private fun buildPromptFromMessages(messages: com.google.gson.JsonArray): String {
         val promptBuilder = StringBuilder()
         for (message in messages) {
             val msgObj = message.asJsonObject
             val role = msgObj.get("role")?.asString ?: ""
-            val content = msgObj.get("content")?.asString ?: ""
-            promptBuilder.append("$role: $content\n")
+            
+            // Handle both string and array content (multimodal support)
+            val contentElement = msgObj.get("content")
+            val contentText = when {
+                contentElement == null -> ""
+                contentElement.isJsonPrimitive && contentElement.asJsonPrimitive.isString -> {
+                    contentElement.asString
+                }
+                contentElement.isJsonArray -> {
+                    // Multimodal content: array of content parts
+                    parseMultimodalContent(contentElement.asJsonArray)
+                }
+                else -> contentElement.toString()
+            }
+            
+            promptBuilder.append("$role: $contentText\n")
         }
         return promptBuilder.toString()
+    }
+    
+    /**
+     * Parse multimodal content from OpenAI format.
+     * Extracts text and describes images/audio for text-based models.
+     * 
+     * Content parts can be:
+     * - {"type": "text", "text": "..."}
+     * - {"type": "image_url", "image_url": {"url": "..."}}
+     * - {"type": "input_audio", "input_audio": {"data": "...", "format": "..."}}
+     */
+    private fun parseMultimodalContent(contentArray: com.google.gson.JsonArray): String {
+        val contentBuilder = StringBuilder()
+        
+        for (contentPart in contentArray) {
+            val partObj = contentPart.asJsonObject
+            val type = partObj.get("type")?.asString ?: continue
+            
+            when (type) {
+                "text" -> {
+                    val text = partObj.get("text")?.asString ?: ""
+                    contentBuilder.append(text)
+                }
+                "image_url" -> {
+                    val imageUrlObj = partObj.get("image_url")?.asJsonObject
+                    val url = imageUrlObj?.get("url")?.asString ?: ""
+                    val detail = imageUrlObj?.get("detail")?.asString ?: "auto"
+                    
+                    // For text-based models, add a description of the image
+                    // Vision models would process the actual image data
+                    if (url.startsWith("data:image")) {
+                        contentBuilder.append("\n[Image: base64 encoded image, detail level: $detail]\n")
+                        LogManager.d(TAG, "Multimodal: Received base64 encoded image with detail=$detail")
+                    } else {
+                        contentBuilder.append("\n[Image URL: $url, detail level: $detail]\n")
+                        LogManager.d(TAG, "Multimodal: Received image URL: $url with detail=$detail")
+                    }
+                }
+                "input_audio" -> {
+                    val audioObj = partObj.get("input_audio")?.asJsonObject
+                    val format = audioObj?.get("format")?.asString ?: "unknown"
+                    
+                    // For text-based models, add a description of the audio
+                    // Audio-capable models would process the actual audio data
+                    contentBuilder.append("\n[Audio input: format=$format]\n")
+                    LogManager.d(TAG, "Multimodal: Received audio input with format=$format")
+                }
+                else -> {
+                    LogManager.w(TAG, "Unknown content type: $type")
+                }
+            }
+        }
+        
+        return contentBuilder.toString()
     }
     
     private fun handleListSessions(ctx: JavalinContext) {
@@ -979,9 +1075,10 @@ class OpenAIApiServer(
     }
     
     /**
-     * Helper function to get all messages including the assistant response
+     * Helper function to get all messages including the assistant response.
+     * Returns Map<String, Any> to support multimodal content.
      */
-    private fun getAllMessages(storedCompletion: StoredCompletion): List<Map<String, String>> {
+    private fun getAllMessages(storedCompletion: StoredCompletion): List<Map<String, Any>> {
         val allMessages = storedCompletion.messages.toMutableList()
         allMessages.add(mapOf(
             "role" to "assistant",

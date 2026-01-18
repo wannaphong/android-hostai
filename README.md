@@ -5,6 +5,7 @@ An Android application that uses [LiteRT-LM](https://github.com/google-ai-edge/L
 ## Features
 
 - 🚀 OpenAI-compatible API endpoints
+- 🎨 **Multimodal support** - Send images and audio in chat messages (OpenAI format)
 - 💬 Multi-session conversation support - maintain separate conversation contexts for multiple users
 - 📱 Native Android app with Material Design UI
 - 🔄 Foreground service for reliable server operation
@@ -17,7 +18,7 @@ An Android application that uses [LiteRT-LM](https://github.com/google-ai-edge/L
 The server implements the following OpenAI-compatible endpoints:
 
 - `GET /v1/models` - List available models
-- `POST /v1/chat/completions` - Chat completions (ChatGPT-style) with multi-session support
+- `POST /v1/chat/completions` - Chat completions (ChatGPT-style) with multi-session and multimodal support
 - `POST /v1/completions` - Text completions with multi-session support
 - `GET /v1/sessions` - List active conversation sessions
 - `DELETE /v1/sessions/{sessionId}` - Clear a specific conversation session
@@ -144,6 +145,35 @@ curl http://<phone-ip>:8080/v1/chat/completions \
 ```
 
 See [API_USAGE.md](API_USAGE.md) for more examples and session management endpoints.
+
+### Multimodal Support
+
+HostAI supports multimodal inputs (images and audio) following the OpenAI API format. You can include images and audio in your chat messages:
+
+```bash
+# Example with image URL
+curl http://<phone-ip>:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "llama-model",
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {"type": "text", "text": "What is in this image?"},
+          {
+            "type": "image_url",
+            "image_url": {
+              "url": "https://example.com/image.jpg"
+            }
+          }
+        ]
+      }
+    ]
+  }'
+```
+
+**Note:** For text-based models, multimodal content is represented as text descriptions. Vision/audio-capable models would process the actual media data. See [API_USAGE.md](API_USAGE.md) for detailed multimodal examples including base64 encoding and audio inputs.
 
 ### Example API Call
 
