@@ -544,10 +544,10 @@ class OpenAIApiServer(
                     outputStream.write(sseData.toByteArray(Charsets.UTF_8))
                     outputStream.flush()
                     
-                    LogManager.d(TAG, "Streamed token #$tokenCount")
+                    LogManager.d(TAG, "Streamed token $tokenCount")
                 } catch (e: IOException) {
                     // Client disconnected - stop streaming gracefully
-                    LogManager.d(TAG, "Client disconnected during streaming (token #$tokenCount)")
+                    LogManager.d(TAG, "Client disconnected during streaming (token $tokenCount)")
                     throw e
                 } catch (e: Exception) {
                     LogManager.e(TAG, "Error writing token to stream", e)
@@ -777,10 +777,10 @@ class OpenAIApiServer(
                     outputStream.write(sseData.toByteArray(Charsets.UTF_8))
                     outputStream.flush()
                     
-                    LogManager.d(TAG, "Streamed token #$tokenCount")
+                    LogManager.d(TAG, "Streamed token $tokenCount")
                 } catch (e: IOException) {
                     // Client disconnected - stop streaming gracefully
-                    LogManager.d(TAG, "Client disconnected during streaming (token #$tokenCount)")
+                    LogManager.d(TAG, "Client disconnected during streaming (token $tokenCount)")
                     throw e
                 } catch (e: Exception) {
                     LogManager.e(TAG, "Error writing token to stream", e)
