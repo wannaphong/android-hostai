@@ -3,7 +3,6 @@ package com.wannaphong.hostai
 import android.content.Context
 import android.util.Base64
 import com.google.ai.edge.litertlm.Content
-import com.google.ai.edge.litertlm.Contents
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonObject
