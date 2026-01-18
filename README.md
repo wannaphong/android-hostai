@@ -56,6 +56,34 @@ Note: With the LiteRT library integration, you no longer need to manually build 
    ./gradlew installDebug
    ```
 
+### GitHub Actions Release Builds
+
+The repository includes a GitHub Actions workflow that automatically builds APK and AAB (Android App Bundle) files when a release is published or when manually triggered.
+
+#### Automated Builds
+
+The workflow builds:
+- **Debug APK**: Always built for testing
+- **Release APK**: Unsigned or signed (based on keystore availability)
+- **Release AAB**: Unsigned or signed (based on keystore availability)
+
+All artifacts are uploaded to the workflow run and attached to GitHub releases when triggered by a release event.
+
+#### Setting Up Signed Releases
+
+To build signed release artifacts, configure the following repository secrets in GitHub:
+
+- `KEYSTORE_FILE`: Base64-encoded keystore file (`base64 -w 0 your-keystore.jks`)
+- `KEYSTORE_PASSWORD`: Password for the keystore
+- `KEY_ALIAS`: Alias of the signing key
+- `KEY_PASSWORD`: Password for the signing key
+
+If these secrets are not configured, the workflow will build unsigned release artifacts.
+
+#### Manual Workflow Trigger
+
+You can manually trigger the workflow from the Actions tab in GitHub to build artifacts without creating a release.
+
 ## Usage
 
 1. Install and launch the app on your Android device

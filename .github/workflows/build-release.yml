@@ -1,4 +1,4 @@
-name: Build and Release APK
+name: Build and Release APK/AAB
 
 on:
   release:
@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    name: Build APK
+    name: Build APK and AAB
     runs-on: ubuntu-latest
     
     permissions:
@@ -32,46 +32,73 @@ jobs:
       - name: Build Debug APK
         run: ./gradlew assembleDebug --no-daemon
       
-      # - name: Build Release APK
-      #   run: ./gradlew assembleRelease --no-daemon
+      - name: Build Release APK and AAB (unsigned)
+        if: ${{ secrets.KEYSTORE_FILE == '' }}
+        run: ./gradlew assembleRelease bundleRelease --no-daemon
       
-      # - name: Sign Release APK (if keystore available)
-      #   if: ${{ secrets.KEYSTORE_FILE != '' }}
-      #   run: |
-      #     echo "${{ secrets.KEYSTORE_FILE }}" | base64 -d > keystore.jks
-      #     ./gradlew assembleRelease \
-      #       -Pandroid.injected.signing.store.file=keystore.jks \
-      #       -Pandroid.injected.signing.store.password="${{ secrets.KEYSTORE_PASSWORD }}" \
-      #       -Pandroid.injected.signing.key.alias="${{ secrets.KEY_ALIAS }}" \
-      #       -Pandroid.injected.signing.key.password="${{ secrets.KEY_PASSWORD }}" \
-      #       --no-daemon
+      - name: Decode Keystore
+        if: ${{ secrets.KEYSTORE_FILE != '' }}
+        run: |
+          echo "${{ secrets.KEYSTORE_FILE }}" | base64 -d > keystore.jks
       
-      - name: Rename APK files
+      - name: Build Signed Release APK and AAB
+        if: ${{ secrets.KEYSTORE_FILE != '' }}
+        run: |
+          ./gradlew assembleRelease bundleRelease \
+            -Pandroid.injected.signing.store.file=keystore.jks \
+            -Pandroid.injected.signing.store.password="${{ secrets.KEYSTORE_PASSWORD }}" \
+            -Pandroid.injected.signing.key.alias="${{ secrets.KEY_ALIAS }}" \
+            -Pandroid.injected.signing.key.password="${{ secrets.KEY_PASSWORD }}" \
+            --no-daemon
+      
+      - name: Clean up keystore
+        if: ${{ secrets.KEYSTORE_FILE != '' }}
+        run: rm -f keystore.jks
+      
+      - name: Copy artifacts
         run: |
           mkdir -p artifacts
+          # Copy debug APK
           if [ -f app/build/outputs/apk/debug/app-debug.apk ]; then
             cp app/build/outputs/apk/debug/app-debug.apk artifacts/HostAI-debug.apk
+          fi
+          # Copy release APK (will be signed if keystore was provided, unsigned otherwise)
+          if [ -f app/build/outputs/apk/release/app-release.apk ]; then
+            cp app/build/outputs/apk/release/app-release.apk artifacts/HostAI-release.apk
+          fi
+          # Copy release AAB (will be signed if keystore was provided, unsigned otherwise)
+          if [ -f app/build/outputs/bundle/release/app-release.aab ]; then
+            cp app/build/outputs/bundle/release/app-release.aab artifacts/HostAI-release.aab
           fi
       
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: HostAI-debug
+          name: HostAI-debug-apk
           path: artifacts/HostAI-debug.apk
           if-no-files-found: warn
       
-      # - name: Upload Release APK
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: HostAI-release
-      #     path: artifacts/HostAI-release*.apk
-      #     if-no-files-found: warn
+      - name: Upload Release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: HostAI-release-apk
+          path: artifacts/HostAI-release.apk
+          if-no-files-found: warn
       
-      - name: Upload APK to Release
+      - name: Upload Release AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: HostAI-release-aab
+          path: artifacts/HostAI-release.aab
+          if-no-files-found: warn
+      
+      - name: Upload Assets to Release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v1
         with:
           files: |
             artifacts/HostAI-debug.apk
+            artifacts/HostAI-release.apk
+            artifacts/HostAI-release.aab
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
