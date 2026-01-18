@@ -185,3 +185,14 @@ Apache License 2.0 - See LICENSE file for details
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
+## Privacy Policy
+
+We doesn't collect any your privacy data in our aplication. The Application doesn't need any internet to working.
+
+
+## Open source
+
+You can get the source code at [https://github.com/wannaphong/android-hostai](https://github.com/wannaphong/android-hostai).
+
+contact: wannaphong@yahoo.com
