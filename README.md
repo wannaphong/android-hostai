@@ -7,6 +7,7 @@ An Android application that uses [LiteRT-LM](https://github.com/google-ai-edge/L
 - 🚀 OpenAI-compatible API endpoints
 - 🎨 **Multimodal support** - Send images and audio in chat messages (OpenAI format)
 - 💬 Multi-session conversation support - maintain separate conversation contexts for multiple users
+- 🔀 **Concurrent request handling** - Multiple requests to different sessions run in parallel; same-session requests are safely queued
 - 📱 Native Android app with Material Design UI
 - 🔄 Foreground service for reliable server operation
 - 🌐 Local network access via WiFi
@@ -145,6 +146,18 @@ curl http://<phone-ip>:8080/v1/chat/completions \
 ```
 
 See [API_USAGE.md](API_USAGE.md) for more examples and session management endpoints.
+
+### Concurrent Request Handling
+
+HostAI efficiently handles multiple concurrent requests:
+
+- **Different sessions run in parallel** - Requests to different sessions (different users/contexts) execute simultaneously for maximum throughput
+- **Same session requests are queued** - Multiple requests to the same session are processed sequentially to maintain conversation consistency
+- **Thread-safe** - Built-in synchronization prevents race conditions and ensures data integrity
+
+This design allows multiple users to interact with the model simultaneously without blocking each other, while ensuring that each user's conversation context remains consistent.
+
+For detailed information about concurrent request handling, see [CONCURRENT_REQUESTS.md](CONCURRENT_REQUESTS.md).
 
 ### Multimodal Support
 
