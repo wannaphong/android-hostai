@@ -137,7 +137,7 @@ class StoredCompletionsActivity : AppCompatActivity() {
     private fun showCompletionDetails(completion: StoredCompletion) {
         val messages = getAllMessages(completion)
         val messageText = messages.joinToString("\n\n") { msg ->
-            "${msg["role"]?.uppercase()}: ${msg["content"]}"
+            "${msg["role"]?.toString()?.uppercase()}: ${msg["content"]}"
         }
         
         val metadataText = if (completion.metadata != null) {
