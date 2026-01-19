@@ -3,6 +3,7 @@ package com.wannaphong.hostai
 import android.content.Context
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
+import com.google.gson.JsonSyntaxException
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -43,6 +44,7 @@ class RequestLogger private constructor(private val context: Context) {
         private const val LOG_RETENTION_DAYS = 90 // Keep logs for 90 days
         private const val LOGS_FILE_NAME = "request_logs.json"
         private const val SAVE_DELAY_MS = 5000L // Batch saves every 5 seconds
+        private const val MILLIS_PER_DAY = 24L * 60L * 60L * 1000L // Milliseconds in a day
         
         @Volatile
         private var instance: RequestLogger? = null
@@ -56,8 +58,11 @@ class RequestLogger private constructor(private val context: Context) {
     
     init {
         logsFile = File(context.filesDir, LOGS_FILE_NAME)
-        loadLogsFromDisk()
-        cleanOldLogs()
+        // Load and clean logs asynchronously to avoid blocking
+        saveExecutor.execute {
+            loadLogsFromDisk()
+            cleanOldLogs()
+        }
     }
     
     /**
@@ -68,9 +73,13 @@ class RequestLogger private constructor(private val context: Context) {
             if (logsFile.exists()) {
                 val json = logsFile.readText()
                 if (json.isNotEmpty()) {
-                    val logsList = gson.fromJson(json, Array<LoggedRequest>::class.java).toList()
-                    logs.addAll(logsList)
-                    LogManager.i(TAG, "Loaded ${logs.size} logs from disk")
+                    try {
+                        val logsList = gson.fromJson(json, Array<LoggedRequest>::class.java).toList()
+                        logs.addAll(logsList)
+                        LogManager.i(TAG, "Loaded ${logs.size} logs from disk")
+                    } catch (e: JsonSyntaxException) {
+                        LogManager.e(TAG, "Malformed JSON in logs file, skipping load", e)
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -124,7 +133,7 @@ class RequestLogger private constructor(private val context: Context) {
      */
     private fun cleanOldLogs() {
         try {
-            val cutoffTime = System.currentTimeMillis() - (LOG_RETENTION_DAYS * 24 * 60 * 60 * 1000L)
+            val cutoffTime = System.currentTimeMillis() - (LOG_RETENTION_DAYS * MILLIS_PER_DAY)
             val sizeBefore = logs.size
             
             // Remove logs older than the cutoff time
@@ -229,5 +238,25 @@ class RequestLogger private constructor(private val context: Context) {
     fun exportLogsToJsonString(): String {
         val logsList = logs.toList()
         return gson.toJson(logsList)
+    }
+    
+    /**
+     * Shutdown the logger and clean up resources
+     * Should be called when the application is terminating
+     */
+    fun shutdown() {
+        try {
+            // Save any pending logs immediately
+            saveLogsToDiskImmediate()
+            // Shutdown the executor
+            saveExecutor.shutdown()
+            if (!saveExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+                saveExecutor.shutdownNow()
+            }
+            LogManager.i(TAG, "RequestLogger shutdown complete")
+        } catch (e: Exception) {
+            LogManager.e(TAG, "Error during shutdown", e)
+            saveExecutor.shutdownNow()
+        }
     }
 }
