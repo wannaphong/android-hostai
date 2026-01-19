@@ -8,6 +8,9 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.TimeUnit
 
 /**
  * Data class for logged request
@@ -31,12 +34,15 @@ class RequestLogger private constructor(private val context: Context) {
     private val gson: Gson = GsonBuilder().setPrettyPrinting().create()
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
     private val logsFile: File
+    private val saveExecutor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
+    private var pendingSave = false
     
     companion object {
         private const val TAG = "RequestLogger"
         private const val MAX_LOGS = 1000 // Limit to prevent excessive memory usage
         private const val LOG_RETENTION_DAYS = 90 // Keep logs for 90 days
         private const val LOGS_FILE_NAME = "request_logs.json"
+        private const val SAVE_DELAY_MS = 5000L // Batch saves every 5 seconds
         
         @Volatile
         private var instance: RequestLogger? = null
@@ -87,6 +93,33 @@ class RequestLogger private constructor(private val context: Context) {
     }
     
     /**
+     * Schedule a delayed save to disk (batches multiple saves)
+     */
+    private fun scheduleSaveToDisk() {
+        synchronized(this) {
+            if (!pendingSave) {
+                pendingSave = true
+                saveExecutor.schedule({
+                    saveLogsToDisk()
+                    synchronized(this) {
+                        pendingSave = false
+                    }
+                }, SAVE_DELAY_MS, TimeUnit.MILLISECONDS)
+            }
+        }
+    }
+    
+    /**
+     * Save logs to disk immediately (used for critical operations like clearing logs)
+     */
+    private fun saveLogsToDiskImmediate() {
+        synchronized(this) {
+            pendingSave = false
+        }
+        saveLogsToDisk()
+    }
+    
+    /**
      * Clean logs older than 90 days
      */
     private fun cleanOldLogs() {
@@ -102,7 +135,7 @@ class RequestLogger private constructor(private val context: Context) {
             
             if (removed > 0) {
                 LogManager.i(TAG, "Cleaned $removed old logs (older than $LOG_RETENTION_DAYS days)")
-                saveLogsToDisk()
+                saveLogsToDiskImmediate()
             }
         } catch (e: Exception) {
             LogManager.e(TAG, "Failed to clean old logs", e)
@@ -137,8 +170,8 @@ class RequestLogger private constructor(private val context: Context) {
             logs.poll()
         }
         
-        // Save to disk after adding new log
-        saveLogsToDisk()
+        // Schedule a save to disk (batched)
+        scheduleSaveToDisk()
         
         LogManager.d(TAG, "Logged request from $ipAddress to $endpoint at $date")
     }
@@ -163,7 +196,7 @@ class RequestLogger private constructor(private val context: Context) {
     fun clearLogs() {
         val count = logs.size
         logs.clear()
-        saveLogsToDisk()
+        saveLogsToDiskImmediate()
         LogManager.i(TAG, "Cleared $count logged requests")
     }
     
