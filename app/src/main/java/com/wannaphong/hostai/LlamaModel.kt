@@ -206,25 +206,33 @@ class LlamaModel(
     
     /**
      * Clear a specific conversation session.
+     * Thread-safe: Acquires the session lock to ensure no concurrent operations.
      * @param sessionId The session ID to clear
      * @return true if the session was found and cleared, false otherwise
      */
     fun clearSession(sessionId: String): Boolean {
-        // Remove lock first to prevent new requests from creating it
-        // after we remove the conversation
-        sessionLocks.remove(sessionId)
-        val conversation = conversations.remove(sessionId)
+        // Get the lock for this session (create if doesn't exist)
+        val lock = getSessionLock(sessionId)
         
-        if (conversation != null) {
-            LogManager.i(TAG, "Clearing conversation session: $sessionId")
-            try {
-                conversation.close()
-            } catch (e: Exception) {
-                LogManager.e(TAG, "Error closing conversation for session $sessionId", e)
+        // Acquire lock to prevent concurrent access during cleanup
+        return lock.withLock {
+            // Remove both conversation and lock while holding the lock
+            val conversation = conversations.remove(sessionId)
+            sessionLocks.remove(sessionId)
+            
+            if (conversation != null) {
+                LogManager.i(TAG, "Clearing conversation session: $sessionId")
+                try {
+                    conversation.close()
+                } catch (e: Exception) {
+                    LogManager.e(TAG, "Error closing conversation for session $sessionId", e)
+                }
+                true
+            } else {
+                false
             }
-            return true
         }
-        return false
+    }
     }
     
     /**
