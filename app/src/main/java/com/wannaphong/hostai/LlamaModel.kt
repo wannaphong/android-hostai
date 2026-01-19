@@ -63,6 +63,13 @@ class LlamaModel(
     // Per-session locks for thread-safe concurrent request handling
     // Ensures requests to the same session are processed sequentially
     // while requests to different sessions can run in parallel
+    //
+    // Implementation note: Locks are used inside coroutines on the IO dispatcher.
+    // This is acceptable because:
+    // 1. The IO dispatcher is designed for blocking operations
+    // 2. We're only blocking during actual model inference (the primary work)
+    // 3. Each coroutine runs on a separate thread from the IO thread pool
+    // 4. The alternative (channels/mutexes) would add complexity without benefit
     private val sessionLocks = ConcurrentHashMap<String, ReentrantLock>()
     
     // Cache SettingsManager to avoid repeated instantiation
@@ -203,9 +210,10 @@ class LlamaModel(
      * @return true if the session was found and cleared, false otherwise
      */
     fun clearSession(sessionId: String): Boolean {
-        val conversation = conversations.remove(sessionId)
-        // Also remove the session lock to free up resources
+        // Remove lock first to prevent new requests from creating it
+        // after we remove the conversation
         sessionLocks.remove(sessionId)
+        val conversation = conversations.remove(sessionId)
         
         if (conversation != null) {
             LogManager.i(TAG, "Clearing conversation session: $sessionId")
