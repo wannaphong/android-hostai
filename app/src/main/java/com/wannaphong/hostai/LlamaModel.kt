@@ -233,7 +233,6 @@ class LlamaModel(
             }
         }
     }
-    }
     
     /**
      * Clear all conversation sessions.
