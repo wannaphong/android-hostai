@@ -232,6 +232,7 @@ class LlamaModel(
                 false
             }
         }
+    }
     
     /**
      * Clear all conversation sessions.
@@ -413,98 +414,98 @@ class LlamaModel(
         }
         
         return scope.launch {
-            // Use per-session lock to ensure thread-safe access
-            val lock = getSessionLock(sessionId)
-            lock.withLock {
-                try {
-                    // Get or create conversation for this session
-                    val sessionConversation = getOrCreateConversation(sessionId, config)
+            try {
+                // Use per-session lock to get or create conversation
+                val lock = getSessionLock(sessionId)
+                val sessionConversation = lock.withLock {
+                    getOrCreateConversation(sessionId, config)
+                }
+                
+                if (sessionConversation == null) {
+                    LogManager.e(TAG, "Failed to create conversation for session '$sessionId'")
+                    onToken("Error: Failed to create conversation for session '$sessionId'")
+                    return@launch
+                }
+                
+                // Use suspendCancellableCoroutine to wait for async callback to complete
+                // Note: This is outside the lock to avoid suspension point inside critical section
+                suspendCancellableCoroutine<Unit> { continuation ->
+                    val resumed = AtomicBoolean(false)
+                    // Use CompletableDeferred to signal when streaming job completes
+                    val streamingCompleted = CompletableDeferred<Unit>()
                     
-                    if (sessionConversation == null) {
-                        LogManager.e(TAG, "Failed to create conversation for session '$sessionId'")
-                        onToken("Error: Failed to create conversation for session '$sessionId'")
-                        return@launch
-                    }
-                    
-                    // Use suspendCancellableCoroutine to wait for async callback to complete
-                    suspendCancellableCoroutine<Unit> { continuation ->
-                        val resumed = AtomicBoolean(false)
-                        // Use CompletableDeferred to signal when streaming job completes
-                        val streamingCompleted = CompletableDeferred<Unit>()
-                        
-                        // Use MessageCallback for streaming
-                        val callback = object : MessageCallback {
-                            override fun onMessage(message: Message) {
-                                // LiteRT's MessageCallback.onMessage is called once with the complete response
-                                // To provide proper streaming, we need to chunk the response and emit it progressively
-                                val fullText = message.toString()
-                                
-                                // Stream the response in chunks (word by word for better UX)
-                                // This simulates token-level streaming when the library provides complete responses
-                                scope.launch {
-                                    try {
-                                        // Split by whitespace while preserving the spaces as separate tokens
-                                        // This provides natural word-by-word streaming
-                                        val parts = fullText.split(" ")
-                                        
-                                        for ((index, part) in parts.withIndex()) {
-                                            // Emit the word
-                                            if (part.isNotEmpty()) {
-                                                onToken(part)
-                                                delay(TOKEN_EMISSION_DELAY_MS)
-                                            }
-                                            // Emit the space after the word (except after the last word)
-                                            if (index < parts.size - 1) {
-                                                onToken(" ")
-                                                delay(TOKEN_EMISSION_DELAY_MS)
-                                            }
+                    // Use MessageCallback for streaming
+                    val callback = object : MessageCallback {
+                        override fun onMessage(message: Message) {
+                            // LiteRT's MessageCallback.onMessage is called once with the complete response
+                            // To provide proper streaming, we need to chunk the response and emit it progressively
+                            val fullText = message.toString()
+                            
+                            // Stream the response in chunks (word by word for better UX)
+                            // This simulates token-level streaming when the library provides complete responses
+                            scope.launch {
+                                try {
+                                    // Split by whitespace while preserving the spaces as separate tokens
+                                    // This provides natural word-by-word streaming
+                                    val parts = fullText.split(" ")
+                                    
+                                    for ((index, part) in parts.withIndex()) {
+                                        // Emit the word
+                                        if (part.isNotEmpty()) {
+                                            onToken(part)
+                                            delay(TOKEN_EMISSION_DELAY_MS)
                                         }
-                                    } catch (e: Exception) {
-                                        LogManager.e(TAG, "Error during chunked streaming", e)
-                                    } finally {
-                                        // Signal that streaming is complete
-                                        streamingCompleted.complete(Unit)
+                                        // Emit the space after the word (except after the last word)
+                                        if (index < parts.size - 1) {
+                                            onToken(" ")
+                                            delay(TOKEN_EMISSION_DELAY_MS)
+                                        }
                                     }
-                                }
-                            }
-                            
-                            override fun onDone() {
-                                LogManager.i(TAG, "Streaming completed for session '$sessionId'")
-                                // Wait for streaming job to complete before resuming
-                                scope.launch {
-                                    // Await the streaming job completion
-                                    // Note: If onMessage was never called, we complete the deferred here
-                                    if (!streamingCompleted.isCompleted) {
-                                        streamingCompleted.complete(Unit)
-                                    }
-                                    streamingCompleted.await()
-                                    // Resume the coroutine when streaming is done
-                                    if (resumed.compareAndSet(false, true)) {
-                                        continuation.resume(Unit)
-                                    }
-                                }
-                            }
-                            
-                            override fun onError(throwable: Throwable) {
-                                Log.e(TAG, "Streaming error for session '$sessionId'", throwable)
-                                LogManager.e(TAG, "Streaming error: ${throwable.message}", throwable)
-                                // Complete the deferred to unblock any waiters
-                                streamingCompleted.complete(Unit)
-                                // Resume with exception on error
-                                if (resumed.compareAndSet(false, true)) {
-                                    continuation.resumeWithException(throwable)
+                                } catch (e: Exception) {
+                                    LogManager.e(TAG, "Error during chunked streaming", e)
+                                } finally {
+                                    // Signal that streaming is complete
+                                    streamingCompleted.complete(Unit)
                                 }
                             }
                         }
                         
-                        val userMessage = Message.of(prompt)
-                        sessionConversation.sendMessageAsync(userMessage, callback)
+                        override fun onDone() {
+                            LogManager.i(TAG, "Streaming completed for session '$sessionId'")
+                            // Wait for streaming job to complete before resuming
+                            scope.launch {
+                                // Await the streaming job completion
+                                // Note: If onMessage was never called, we complete the deferred here
+                                if (!streamingCompleted.isCompleted) {
+                                    streamingCompleted.complete(Unit)
+                                }
+                                streamingCompleted.await()
+                                // Resume the coroutine when streaming is done
+                                if (resumed.compareAndSet(false, true)) {
+                                    continuation.resume(Unit)
+                                }
+                            }
+                        }
+                        
+                        override fun onError(throwable: Throwable) {
+                            Log.e(TAG, "Streaming error for session '$sessionId'", throwable)
+                            LogManager.e(TAG, "Streaming error: ${throwable.message}", throwable)
+                            // Complete the deferred to unblock any waiters
+                            streamingCompleted.complete(Unit)
+                            // Resume with exception on error
+                            if (resumed.compareAndSet(false, true)) {
+                                continuation.resumeWithException(throwable)
+                            }
+                        }
                     }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Streaming failed for session '$sessionId'", e)
-                    LogManager.e(TAG, "Streaming failed: ${e.message}", e)
-                    onToken("Error: ${e.message}")
+                    
+                    val userMessage = Message.of(prompt)
+                    sessionConversation.sendMessageAsync(userMessage, callback)
                 }
+            } catch (e: Exception) {
+                Log.e(TAG, "Streaming failed for session '$sessionId'", e)
+                LogManager.e(TAG, "Streaming failed: ${e.message}", e)
+                onToken("Error: ${e.message}")
             }
         }
     }
@@ -545,95 +546,95 @@ class LlamaModel(
         }
         
         return scope.launch {
-            // Use per-session lock to ensure thread-safe access
-            val lock = getSessionLock(sessionId)
-            lock.withLock {
-                try {
-                    // Get or create conversation for this session
-                    val sessionConversation = getOrCreateConversation(sessionId, config)
+            try {
+                // Use per-session lock to get or create conversation
+                val lock = getSessionLock(sessionId)
+                val sessionConversation = lock.withLock {
+                    getOrCreateConversation(sessionId, config)
+                }
+                
+                if (sessionConversation == null) {
+                    LogManager.e(TAG, "Failed to create conversation for session '$sessionId'")
+                    onToken("Error: Failed to create conversation for session '$sessionId'")
+                    return@launch
+                }
+                
+                // Use suspendCancellableCoroutine to wait for async callback to complete
+                // Note: This is outside the lock to avoid suspension point inside critical section
+                suspendCancellableCoroutine<Unit> { continuation ->
+                    val resumed = AtomicBoolean(false)
+                    // Use CompletableDeferred to signal when streaming job completes
+                    val streamingCompleted = CompletableDeferred<Unit>()
                     
-                    if (sessionConversation == null) {
-                        LogManager.e(TAG, "Failed to create conversation for session '$sessionId'")
-                        onToken("Error: Failed to create conversation for session '$sessionId'")
-                        return@launch
-                    }
-                    
-                    // Use suspendCancellableCoroutine to wait for async callback to complete
-                    suspendCancellableCoroutine<Unit> { continuation ->
-                        val resumed = AtomicBoolean(false)
-                        // Use CompletableDeferred to signal when streaming job completes
-                        val streamingCompleted = CompletableDeferred<Unit>()
-                        
-                        // Use MessageCallback for streaming
-                        val callback = object : MessageCallback {
-                            override fun onMessage(message: Message) {
-                                // LiteRT's MessageCallback.onMessage is called once with the complete response
-                                // To provide proper streaming, we need to chunk the response and emit it progressively
-                                val fullText = message.toString()
-                                
-                                // Stream the response in chunks (word by word for better UX)
-                                scope.launch {
-                                    try {
-                                        // Split by whitespace while preserving the spaces as separate tokens
-                                        val parts = fullText.split(" ")
-                                        
-                                        for ((index, part) in parts.withIndex()) {
-                                            // Emit the word
-                                            if (part.isNotEmpty()) {
-                                                onToken(part)
-                                                delay(TOKEN_EMISSION_DELAY_MS)
-                                            }
-                                            // Emit the space after the word (except after the last word)
-                                            if (index < parts.size - 1) {
-                                                onToken(" ")
-                                                delay(TOKEN_EMISSION_DELAY_MS)
-                                            }
+                    // Use MessageCallback for streaming
+                    val callback = object : MessageCallback {
+                        override fun onMessage(message: Message) {
+                            // LiteRT's MessageCallback.onMessage is called once with the complete response
+                            // To provide proper streaming, we need to chunk the response and emit it progressively
+                            val fullText = message.toString()
+                            
+                            // Stream the response in chunks (word by word for better UX)
+                            scope.launch {
+                                try {
+                                    // Split by whitespace while preserving the spaces as separate tokens
+                                    val parts = fullText.split(" ")
+                                    
+                                    for ((index, part) in parts.withIndex()) {
+                                        // Emit the word
+                                        if (part.isNotEmpty()) {
+                                            onToken(part)
+                                            delay(TOKEN_EMISSION_DELAY_MS)
                                         }
-                                    } catch (e: Exception) {
-                                        LogManager.e(TAG, "Error during chunked streaming", e)
-                                    } finally {
-                                        // Signal that streaming is complete
-                                        streamingCompleted.complete(Unit)
+                                        // Emit the space after the word (except after the last word)
+                                        if (index < parts.size - 1) {
+                                            onToken(" ")
+                                            delay(TOKEN_EMISSION_DELAY_MS)
+                                        }
                                     }
-                                }
-                            }
-                            
-                            override fun onDone() {
-                                LogManager.i(TAG, "Multimodal streaming completed for session '$sessionId'")
-                                // Wait for streaming job to complete before resuming
-                                scope.launch {
-                                    // Await the streaming job completion
-                                    if (!streamingCompleted.isCompleted) {
-                                        streamingCompleted.complete(Unit)
-                                    }
-                                    streamingCompleted.await()
-                                    // Resume the coroutine when streaming is done
-                                    if (resumed.compareAndSet(false, true)) {
-                                        continuation.resume(Unit)
-                                    }
-                                }
-                            }
-                            
-                            override fun onError(throwable: Throwable) {
-                                Log.e(TAG, "Multimodal streaming error for session '$sessionId'", throwable)
-                                LogManager.e(TAG, "Multimodal streaming error: ${throwable.message}", throwable)
-                                // Complete the deferred to unblock any waiters
-                                streamingCompleted.complete(Unit)
-                                // Resume with exception on error
-                                if (resumed.compareAndSet(false, true)) {
-                                    continuation.resumeWithException(throwable)
+                                } catch (e: Exception) {
+                                    LogManager.e(TAG, "Error during chunked streaming", e)
+                                } finally {
+                                    // Signal that streaming is complete
+                                    streamingCompleted.complete(Unit)
                                 }
                             }
                         }
                         
-                        val userMessage = Message.of(*contents.toTypedArray())
-                        sessionConversation.sendMessageAsync(userMessage, callback)
+                        override fun onDone() {
+                            LogManager.i(TAG, "Multimodal streaming completed for session '$sessionId'")
+                            // Wait for streaming job to complete before resuming
+                            scope.launch {
+                                // Await the streaming job completion
+                                if (!streamingCompleted.isCompleted) {
+                                    streamingCompleted.complete(Unit)
+                                }
+                                streamingCompleted.await()
+                                // Resume the coroutine when streaming is done
+                                if (resumed.compareAndSet(false, true)) {
+                                    continuation.resume(Unit)
+                                }
+                            }
+                        }
+                        
+                        override fun onError(throwable: Throwable) {
+                            Log.e(TAG, "Multimodal streaming error for session '$sessionId'", throwable)
+                            LogManager.e(TAG, "Multimodal streaming error: ${throwable.message}", throwable)
+                            // Complete the deferred to unblock any waiters
+                            streamingCompleted.complete(Unit)
+                            // Resume with exception on error
+                            if (resumed.compareAndSet(false, true)) {
+                                continuation.resumeWithException(throwable)
+                            }
+                        }
                     }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Multimodal streaming failed for session '$sessionId'", e)
-                    LogManager.e(TAG, "Multimodal streaming failed: ${e.message}", e)
-                    onToken("Error: ${e.message}")
+                    
+                    val userMessage = Message.of(*contents.toTypedArray())
+                    sessionConversation.sendMessageAsync(userMessage, callback)
                 }
+            } catch (e: Exception) {
+                Log.e(TAG, "Multimodal streaming failed for session '$sessionId'", e)
+                LogManager.e(TAG, "Multimodal streaming failed: ${e.message}", e)
+                onToken("Error: ${e.message}")
             }
         }
     }
