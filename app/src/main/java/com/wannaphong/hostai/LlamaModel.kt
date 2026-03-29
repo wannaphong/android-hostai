@@ -4,6 +4,7 @@ import android.content.ContentResolver
 import android.content.Context
 import android.util.Log
 import com.google.ai.edge.litertlm.Backend
+import com.google.ai.edge.litertlm.Contents
 import com.google.ai.edge.litertlm.Conversation
 import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Content
@@ -111,7 +112,7 @@ class LlamaModel(
             
             // Get backend preference from settings
             val useGpu = settingsManager.isGpuBackendEnabled()
-            val backend = if (useGpu) Backend.GPU else Backend.CPU
+            val backend = if (useGpu) Backend.GPU() else Backend.CPU()
             
             LogManager.i(TAG, "Using ${if (useGpu) "GPU" else "CPU"} backend for inference")
             
@@ -122,8 +123,8 @@ class LlamaModel(
                 modelPath = modelPath,
                 backend = backend,
                 maxNumTokens = DEFAULT_MAX_TOKENS,
-                visionBackend = Backend.GPU,  // Enable vision processing
-                audioBackend = Backend.CPU     // Enable audio processing
+                visionBackend = Backend.GPU(),  // Enable vision processing
+                audioBackend = Backend.CPU()     // Enable audio processing
             )
             
             // Initialize engine (this can take time, already on IO thread)
@@ -187,11 +188,13 @@ class LlamaModel(
                 }
                 
                 // Build conversation config
-                // Note: extraContext support in ConversationConfig depends on LiteRT-LM version
-                val conversationConfig = ConversationConfig(null, emptyList(), samplerConfig)
+                val conversationConfig = ConversationConfig(
+                    systemInstruction = null,
+                    initialMessages = emptyList(),
+                    samplerConfig = samplerConfig
+                )
                 
                 val newConversation = currentEngine.createConversation(conversationConfig)
-                    ?: throw IllegalStateException("createConversation returned null")
                 
                 LogManager.i(TAG, "Created new conversation for session: $sessionId")
                 newConversation
@@ -303,10 +306,10 @@ class LlamaModel(
                 }
                 
                 // Send message and get response synchronously
-                val userMessage = Message.of(prompt)
+                val userMessage = Message.user(prompt)
                 val response = sessionConversation.sendMessage(userMessage)
                 
-                val result = response?.toString() ?: ""
+                val result = response.toString()
                 LogManager.i(TAG, "Generation completed successfully for session '$sessionId' (length: ${result.length})")
                 result
             } catch (e: Exception) {
@@ -355,10 +358,10 @@ class LlamaModel(
                 }
                 
                 // Send message with multimodal contents and get response synchronously
-                val userMessage = Message.of(*contents.toTypedArray())
+                val userMessage = Message.user(Contents.of(contents))
                 val response = sessionConversation.sendMessage(userMessage)
                 
-                val result = response?.toString() ?: ""
+                val result = response.toString()
                 LogManager.i(TAG, "Multimodal generation completed successfully for session '$sessionId' (length: ${result.length})")
                 result
             } catch (e: Exception) {
@@ -499,7 +502,7 @@ class LlamaModel(
                         }
                     }
                     
-                    val userMessage = Message.of(prompt)
+                    val userMessage = Message.user(prompt)
                     sessionConversation.sendMessageAsync(userMessage, callback)
                 }
             } catch (e: Exception) {
@@ -628,7 +631,7 @@ class LlamaModel(
                         }
                     }
                     
-                    val userMessage = Message.of(*contents.toTypedArray())
+                    val userMessage = Message.user(Contents.of(contents))
                     sessionConversation.sendMessageAsync(userMessage, callback)
                 }
             } catch (e: Exception) {
