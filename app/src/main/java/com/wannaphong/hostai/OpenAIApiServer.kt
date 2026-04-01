@@ -12,6 +12,7 @@ import io.javalin.http.Context as JavalinContext
 import kotlinx.coroutines.*
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Semaphore
 
 /**
  * Data class to store chat completion information.
@@ -57,6 +58,11 @@ class OpenAIApiServer(
     // Settings manager for feature toggles
     private val settingsManager = SettingsManager(context)
     
+    // Semaphore to limit concurrent model-inference requests.
+    // Initialised in start() from the configured max-concurrency value.
+    // fair=true ensures requests are queued in FIFO order (OpenAI-like behaviour).
+    private var requestSemaphore = Semaphore(SettingsManager.DEFAULT_MAX_CONCURRENCY, true)
+    
     // Request logger (singleton)
     private val requestLogger by lazy { RequestLogger.getInstance(context) }
     
@@ -68,6 +74,12 @@ class OpenAIApiServer(
     
     fun start() {
         try {
+            // Initialise the semaphore with the current max-concurrency setting.
+            val maxConcurrency = settingsManager.getMaxConcurrency()
+                .coerceAtLeast(1)
+            requestSemaphore = Semaphore(maxConcurrency, true)
+            LogManager.i(TAG, "Max concurrency set to $maxConcurrency")
+            
             app = Javalin.create { config ->
                 // Configure Javalin
                 config.http.maxRequestSize = MAX_REQUEST_BODY_SIZE.toLong()
@@ -88,11 +100,6 @@ class OpenAIApiServer(
                 get("/v1/chat/completions/{completion_id}") { ctx -> handleGetStoredCompletion(ctx) }
                 get("/v1/chat/completions/{completion_id}/messages") { ctx -> handleGetStoredCompletionMessages(ctx) }
                 post("/v1/chat/completions/{completion_id}") { ctx -> handleUpdateStoredCompletion(ctx) }
-                
-                // Session management endpoints
-                get("/v1/sessions") { ctx -> handleListSessions(ctx) }
-                delete("/v1/sessions/{sessionId}") { ctx -> handleDeleteSession(ctx) }
-                delete("/v1/sessions") { ctx -> handleClearAllSessions(ctx) }
                 
                 // UI endpoints
                 get("/") { ctx -> handleRoot(ctx) }
@@ -249,7 +256,6 @@ class OpenAIApiServer(
                 <div class="endpoint">
                     <strong>POST /v1/chat/completions</strong><br>
                     Chat completion endpoint (OpenAI compatible)<br>
-                    <em>Supports multi-session via: conversation_id, user, session_id fields or X-Session-ID header</em><br>
                     <em>Set store=true to persist completion for later retrieval</em>
                 </div>
                 <div class="endpoint">
@@ -266,20 +272,7 @@ class OpenAIApiServer(
                 </div>
                 <div class="endpoint">
                     <strong>POST /v1/completions</strong><br>
-                    Text completion endpoint (OpenAI compatible)<br>
-                    <em>Supports multi-session via: conversation_id, user, session_id fields or X-Session-ID header</em>
-                </div>
-                <div class="endpoint">
-                    <strong>GET /v1/sessions</strong><br>
-                    List active conversation sessions
-                </div>
-                <div class="endpoint">
-                    <strong>DELETE /v1/sessions/{sessionId}</strong><br>
-                    Clear a specific conversation session
-                </div>
-                <div class="endpoint">
-                    <strong>DELETE /v1/sessions</strong><br>
-                    Clear all conversation sessions
+                    Text completion endpoint (OpenAI compatible)
                 </div>
                 <div class="endpoint">
                     <strong>GET /health</strong><br>
@@ -400,10 +393,19 @@ class OpenAIApiServer(
             }
             LogManager.d(TAG, "Chat completion - stream: $stream, maxTokens: ${config.maxTokens}, temp: ${config.temperature}")
             
-            if (stream) {
-                handleChatStreamingResponse(ctx, contents, config, sessionId, messages, store, metadata, bodyText)
-            } else {
-                handleChatNonStreamingResponse(ctx, contents, config, sessionId, messages, store, metadata, bodyText)
+            // Acquire a permit before running inference. If max concurrency is reached the
+            // calling thread blocks here until a permit becomes available (FIFO queue).
+            LogManager.d(TAG, "Acquiring concurrency permit (available: ${requestSemaphore.availablePermits()}, queue depth: ${requestSemaphore.queueLength})")
+            requestSemaphore.acquire()
+            LogManager.d(TAG, "Concurrency permit acquired for chat completion")
+            try {
+                if (stream) {
+                    handleChatStreamingResponse(ctx, contents, config, sessionId, messages, store, metadata, bodyText)
+                } else {
+                    handleChatNonStreamingResponse(ctx, contents, config, sessionId, messages, store, metadata, bodyText)
+                }
+            } finally {
+                requestSemaphore.release()
             }
         } catch (e: Exception) {
             LogManager.e(TAG, "Error handling chat completions", e)
@@ -763,10 +765,19 @@ class OpenAIApiServer(
             // Build generation config from request parameters
             val config = extractGenerationConfig(request)
             
-            if (stream) {
-                handleCompletionStreamingResponse(ctx, prompt, config, sessionId, bodyText)
-            } else {
-                handleCompletionNonStreamingResponse(ctx, prompt, config, sessionId, bodyText)
+            // Acquire a permit before running inference. If max concurrency is reached the
+            // calling thread blocks here until a permit becomes available (FIFO queue).
+            LogManager.d(TAG, "Acquiring concurrency permit (available: ${requestSemaphore.availablePermits()}, queue depth: ${requestSemaphore.queueLength})")
+            requestSemaphore.acquire()
+            LogManager.d(TAG, "Concurrency permit acquired for text completion")
+            try {
+                if (stream) {
+                    handleCompletionStreamingResponse(ctx, prompt, config, sessionId, bodyText)
+                } else {
+                    handleCompletionNonStreamingResponse(ctx, prompt, config, sessionId, bodyText)
+                }
+            } finally {
+                requestSemaphore.release()
             }
         } catch (e: Exception) {
             LogManager.e(TAG, "Error handling completions", e)
@@ -1116,85 +1127,6 @@ class OpenAIApiServer(
                     else -> it.toString()
                 }
             }
-        }
-    }
-    
-    private fun handleListSessions(ctx: JavalinContext) {
-        LogManager.d(TAG, "Handling GET /v1/sessions")
-        
-        try {
-            val activeSessions = model.getActiveSessions()
-            val sessionCount = model.getActiveSessionCount()
-            
-            val response = mapOf(
-                "object" to "list",
-                "data" to activeSessions.map { sessionId ->
-                    mapOf(
-                        "id" to sessionId,
-                        "object" to "session"
-                    )
-                },
-                "count" to sessionCount
-            )
-            
-            ctx.contentType("application/json").result(gson.toJson(response))
-        } catch (e: Exception) {
-            LogManager.e(TAG, "Error listing sessions", e)
-            val errorResponse = mapOf(
-                "error" to mapOf("message" to (e.message ?: "Failed to list sessions"))
-            )
-            ctx.status(500).contentType("application/json").result(gson.toJson(errorResponse))
-        }
-    }
-    
-    private fun handleDeleteSession(ctx: JavalinContext) {
-        val sessionId = ctx.pathParam("sessionId")
-        LogManager.d(TAG, "Handling DELETE /v1/sessions/$sessionId")
-        
-        try {
-            val cleared = model.clearSession(sessionId)
-            
-            if (cleared) {
-                val response = mapOf(
-                    "deleted" to true,
-                    "id" to sessionId,
-                    "object" to "session"
-                )
-                ctx.contentType("application/json").result(gson.toJson(response))
-            } else {
-                val errorResponse = mapOf(
-                    "error" to mapOf("message" to "Session not found: $sessionId")
-                )
-                ctx.status(404).contentType("application/json").result(gson.toJson(errorResponse))
-            }
-        } catch (e: Exception) {
-            LogManager.e(TAG, "Error deleting session $sessionId", e)
-            val errorResponse = mapOf(
-                "error" to mapOf("message" to (e.message ?: "Failed to delete session"))
-            )
-            ctx.status(500).contentType("application/json").result(gson.toJson(errorResponse))
-        }
-    }
-    
-    private fun handleClearAllSessions(ctx: JavalinContext) {
-        LogManager.d(TAG, "Handling DELETE /v1/sessions (clear all)")
-        
-        try {
-            val countBefore = model.getActiveSessionCount()
-            model.clearAllSessions()
-            
-            val response = mapOf(
-                "deleted" to true,
-                "count" to countBefore,
-                "object" to "sessions"
-            )
-            ctx.contentType("application/json").result(gson.toJson(response))
-        } catch (e: Exception) {
-            LogManager.e(TAG, "Error clearing all sessions", e)
-            val errorResponse = mapOf(
-                "error" to mapOf("message" to (e.message ?: "Failed to clear sessions"))
-            )
-            ctx.status(500).contentType("application/json").result(gson.toJson(errorResponse))
         }
     }
     
