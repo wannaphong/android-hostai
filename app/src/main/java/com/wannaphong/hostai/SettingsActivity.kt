@@ -35,6 +35,9 @@ class SettingsActivity : AppCompatActivity() {
         // Load port setting
         binding.portEditText.setText(settingsManager.getCustomPort().toString())
         
+        // Load max concurrency setting
+        binding.maxConcurrencyEditText.setText(settingsManager.getMaxConcurrency().toString())
+        
         // Load feature toggles
         binding.webChatSwitch.isChecked = settingsManager.isWebChatEnabled()
         binding.textCompletionsSwitch.isChecked = settingsManager.isTextCompletionsEnabled()
@@ -109,7 +112,17 @@ class SettingsActivity : AppCompatActivity() {
             return
         }
         
+        // Validate and save max concurrency
+        val maxConcurrencyText = binding.maxConcurrencyEditText.text.toString()
+        val maxConcurrency = maxConcurrencyText.toIntOrNull()
+        
+        if (maxConcurrency == null || maxConcurrency < 1) {
+            Toast.makeText(this, R.string.invalid_max_concurrency, Toast.LENGTH_LONG).show()
+            return
+        }
+        
         settingsManager.setCustomPort(port)
+        settingsManager.setMaxConcurrency(maxConcurrency)
         
         // Save feature toggles
         settingsManager.setWebChatEnabled(binding.webChatSwitch.isChecked)

@@ -12,6 +12,7 @@ import io.javalin.http.Context as JavalinContext
 import kotlinx.coroutines.*
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Semaphore
 
 /**
  * Data class to store chat completion information.
@@ -57,6 +58,11 @@ class OpenAIApiServer(
     // Settings manager for feature toggles
     private val settingsManager = SettingsManager(context)
     
+    // Semaphore to limit concurrent model-inference requests.
+    // Initialised in start() from the configured max-concurrency value.
+    // fair=true ensures requests are queued in FIFO order (OpenAI-like behaviour).
+    private var requestSemaphore = Semaphore(SettingsManager.DEFAULT_MAX_CONCURRENCY, true)
+    
     // Request logger (singleton)
     private val requestLogger by lazy { RequestLogger.getInstance(context) }
     
@@ -68,6 +74,12 @@ class OpenAIApiServer(
     
     fun start() {
         try {
+            // Initialise the semaphore with the current max-concurrency setting.
+            val maxConcurrency = settingsManager.getMaxConcurrency()
+                .coerceAtLeast(1)
+            requestSemaphore = Semaphore(maxConcurrency, true)
+            LogManager.i(TAG, "Max concurrency set to $maxConcurrency")
+            
             app = Javalin.create { config ->
                 // Configure Javalin
                 config.http.maxRequestSize = MAX_REQUEST_BODY_SIZE.toLong()
@@ -400,10 +412,18 @@ class OpenAIApiServer(
             }
             LogManager.d(TAG, "Chat completion - stream: $stream, maxTokens: ${config.maxTokens}, temp: ${config.temperature}")
             
-            if (stream) {
-                handleChatStreamingResponse(ctx, contents, config, sessionId, messages, store, metadata, bodyText)
-            } else {
-                handleChatNonStreamingResponse(ctx, contents, config, sessionId, messages, store, metadata, bodyText)
+            // Acquire a permit before running inference. If max concurrency is reached the
+            // calling thread blocks here until a permit becomes available (FIFO queue).
+            LogManager.d(TAG, "Waiting for concurrency permit (queue depth: ${requestSemaphore.queueLength})")
+            requestSemaphore.acquire()
+            try {
+                if (stream) {
+                    handleChatStreamingResponse(ctx, contents, config, sessionId, messages, store, metadata, bodyText)
+                } else {
+                    handleChatNonStreamingResponse(ctx, contents, config, sessionId, messages, store, metadata, bodyText)
+                }
+            } finally {
+                requestSemaphore.release()
             }
         } catch (e: Exception) {
             LogManager.e(TAG, "Error handling chat completions", e)
@@ -763,10 +783,18 @@ class OpenAIApiServer(
             // Build generation config from request parameters
             val config = extractGenerationConfig(request)
             
-            if (stream) {
-                handleCompletionStreamingResponse(ctx, prompt, config, sessionId, bodyText)
-            } else {
-                handleCompletionNonStreamingResponse(ctx, prompt, config, sessionId, bodyText)
+            // Acquire a permit before running inference. If max concurrency is reached the
+            // calling thread blocks here until a permit becomes available (FIFO queue).
+            LogManager.d(TAG, "Waiting for concurrency permit (queue depth: ${requestSemaphore.queueLength})")
+            requestSemaphore.acquire()
+            try {
+                if (stream) {
+                    handleCompletionStreamingResponse(ctx, prompt, config, sessionId, bodyText)
+                } else {
+                    handleCompletionNonStreamingResponse(ctx, prompt, config, sessionId, bodyText)
+                }
+            } finally {
+                requestSemaphore.release()
             }
         } catch (e: Exception) {
             LogManager.e(TAG, "Error handling completions", e)
