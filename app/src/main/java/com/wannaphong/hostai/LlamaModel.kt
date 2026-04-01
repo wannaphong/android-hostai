@@ -26,6 +26,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock as mutexWithLock
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.locks.ReentrantReadWriteLock
+import kotlin.concurrent.read
+import kotlin.concurrent.write
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -63,6 +66,13 @@ class LlamaModel(
     // Global Mutex to serialise Engine.createConversation() calls.
     // The LiteRT engine may not safely support concurrent conversation creation.
     private val engineCreationLock = Mutex()
+
+    // Read/Write lock to guard the engine lifecycle.
+    // generate*() methods acquire the read lock so they can run concurrently.
+    // close() acquires the write lock, which blocks until every in-flight
+    // native sendMessage() call has finished – preventing a native crash where
+    // the engine is freed while it is still executing inference.
+    private val engineLifecycleLock = ReentrantReadWriteLock()
 
     // Cache SettingsManager to avoid repeated instantiation
     private val settingsManager by lazy { SettingsManager(context) }
@@ -207,30 +217,39 @@ class LlamaModel(
 
         // runBlocking bridges this non-suspend function (called by the Javalin HTTP handler)
         // with the suspend world. Javalin handlers run on dedicated IO threads so blocking is acceptable.
-        return runBlocking {
-            var conversation: Conversation? = null
-            try {
-                conversation = createConversation(config)
+        // The read lock prevents the engine from being closed (write lock in close()) while
+        // sendMessage() is executing in native code.
+        return engineLifecycleLock.read {
+            // Re-check inside the lock: close() sets isLoaded = false while holding the write
+            // lock, so if we reach here after close() completed, we see the updated value.
+            if (!isLoaded) {
+                return@read "Error: Model not loaded. Please load a model first."
+            }
+            runBlocking {
+                var conversation: Conversation? = null
+                try {
+                    conversation = createConversation(config)
 
-                if (conversation == null) {
-                    val errorMsg = "Error: Failed to create conversation"
-                    LogManager.e(TAG, errorMsg)
-                    return@runBlocking errorMsg
-                }
+                    if (conversation == null) {
+                        val errorMsg = "Error: Failed to create conversation"
+                        LogManager.e(TAG, errorMsg)
+                        return@runBlocking errorMsg
+                    }
 
-                // Send message and get response synchronously
-                val userMessage = Message.user(prompt)
-                val response = conversation.sendMessage(userMessage)
-                val result = response.toString()
-                LogManager.i(TAG, "Generation completed successfully (length: ${result.length})")
-                result
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to generate response", e)
-                LogManager.e(TAG, "Failed to generate response: ${e.message}", e)
-                "Error: ${e.message}"
-            } finally {
-                try { conversation?.close() } catch (e: Exception) {
-                    LogManager.w(TAG, "Error closing conversation: ${e.message}")
+                    // Send message and get response synchronously
+                    val userMessage = Message.user(prompt)
+                    val response = conversation.sendMessage(userMessage)
+                    val result = response.toString()
+                    LogManager.i(TAG, "Generation completed successfully (length: ${result.length})")
+                    result
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to generate response", e)
+                    LogManager.e(TAG, "Failed to generate response: ${e.message}", e)
+                    "Error: ${e.message}"
+                } finally {
+                    try { conversation?.close() } catch (e: Exception) {
+                        LogManager.w(TAG, "Error closing conversation: ${e.message}")
+                    }
                 }
             }
         }
@@ -258,30 +277,37 @@ class LlamaModel(
             return "This is a mock multimodal response from the model with ${contents.size} content parts."
         }
 
-        return runBlocking {
-            var conversation: Conversation? = null
-            try {
-                conversation = createConversation(config)
+        return engineLifecycleLock.read {
+            // Re-check inside the lock: close() sets isLoaded = false while holding the write
+            // lock, so if we reach here after close() completed, we see the updated value.
+            if (!isLoaded) {
+                return@read "Error: Model not loaded. Please load a model first."
+            }
+            runBlocking {
+                var conversation: Conversation? = null
+                try {
+                    conversation = createConversation(config)
 
-                if (conversation == null) {
-                    val errorMsg = "Error: Failed to create conversation"
-                    LogManager.e(TAG, errorMsg)
-                    return@runBlocking errorMsg
-                }
+                    if (conversation == null) {
+                        val errorMsg = "Error: Failed to create conversation"
+                        LogManager.e(TAG, errorMsg)
+                        return@runBlocking errorMsg
+                    }
 
-                // Send message with multimodal contents and get response synchronously
-                val userMessage = Message.user(Contents.of(contents))
-                val response = conversation.sendMessage(userMessage)
-                val result = response.toString()
-                LogManager.i(TAG, "Multimodal generation completed successfully (length: ${result.length})")
-                result
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to generate multimodal response", e)
-                LogManager.e(TAG, "Failed to generate multimodal response: ${e.message}", e)
-                "Error: ${e.message}"
-            } finally {
-                try { conversation?.close() } catch (e: Exception) {
-                    LogManager.w(TAG, "Error closing conversation: ${e.message}")
+                    // Send message with multimodal contents and get response synchronously
+                    val userMessage = Message.user(Contents.of(contents))
+                    val response = conversation.sendMessage(userMessage)
+                    val result = response.toString()
+                    LogManager.i(TAG, "Multimodal generation completed successfully (length: ${result.length})")
+                    result
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to generate multimodal response", e)
+                    LogManager.e(TAG, "Failed to generate multimodal response: ${e.message}", e)
+                    "Error: ${e.message}"
+                } finally {
+                    try { conversation?.close() } catch (e: Exception) {
+                        LogManager.w(TAG, "Error closing conversation: ${e.message}")
+                    }
                 }
             }
         }
@@ -533,13 +559,17 @@ class LlamaModel(
 
     /**
      * Cleanup resources, optionally closing the engine.
+     * Must be called while holding engineLifecycleLock (write lock) when closeEngine is true.
      */
     private fun cleanup(closeEngine: Boolean = false) {
         try {
             if (closeEngine) {
+                // Cancel streaming coroutines BEFORE closing the native engine so that
+                // any in-flight sendMessageAsync callbacks see a cancelled scope and do
+                // not attempt to use engine resources after they are freed.
+                scope.cancel()
                 engine?.close()
                 engine = null
-                scope.cancel()
             }
 
             isLoaded = false
@@ -558,9 +588,21 @@ class LlamaModel(
     /**
      * Explicitly release native resources.
      * Call this when you're done with the model to free memory immediately.
+     *
+     * Acquires the write lock which blocks until every in-flight generate() call
+     * (holding the read lock) has returned.  This prevents the engine from being
+     * freed while a native sendMessage() is still executing and causing a crash.
+     * isLoaded is set to false inside the write lock so that any thread that
+     * races through isModelLoaded() and then waits on the read lock will see
+     * the updated flag and bail out without touching a closed engine.
      */
     fun close() {
         LogManager.i(TAG, "Closing model and releasing resources")
-        cleanup(closeEngine = true)
+        // The write lock waits for all current read-lock holders (in-flight
+        // generate / generateWithContents calls) to complete before proceeding.
+        engineLifecycleLock.write {
+            isLoaded = false
+            cleanup(closeEngine = true)
+        }
     }
 }
