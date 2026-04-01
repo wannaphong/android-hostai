@@ -214,13 +214,8 @@ class LlamaModel(
                         temperature = config.temperature
                     )
 
-                    // Use an empty string instead of null for systemInstruction.
-                    // Some LiteRT versions throw a NullPointerException when null is
-                    // passed through the JNI boundary.  An empty string is treated as
-                    // "no system instruction" by the model, so the behaviour is the same
-                    // while avoiding the NPE risk.
                     val conversationConfig = ConversationConfig(
-                        systemInstruction = "",
+                        systemInstruction = null,
                         initialMessages = emptyList(),
                         samplerConfig = samplerConfig
                     )
@@ -240,7 +235,7 @@ class LlamaModel(
                 if (winner != null) {
                     // Another coroutine won the race.  Close our duplicate and use theirs.
                     try { conversation.close() } catch (e: Exception) {
-                        LogManager.w(TAG, "Error closing duplicate conversation for session '$sessionId'", e)
+                        LogManager.w(TAG, "Error closing duplicate conversation for session '$sessionId': ${e.message}")
                     }
                     return winner
                 }
