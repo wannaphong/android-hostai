@@ -10,23 +10,6 @@ Replace `<phone-ip>` with your Android device's IP address (shown in the app):
 http://<phone-ip>:8080
 ```
 
-## Multi-Session Support
-
-HostAI now supports multiple concurrent conversation sessions, allowing you to maintain separate conversation contexts. This is useful for:
-- Supporting multiple users or clients
-- Maintaining different conversation threads
-- Isolating different tasks or contexts
-
-### How to Use Sessions
-
-You can specify a session ID in multiple ways (in order of priority):
-1. `conversation_id` field in request body (OpenAI Conversations API standard)
-2. `user` field in request body (OpenAI standard)
-3. `session_id` field in request body
-4. `X-Session-ID` HTTP header
-
-If no session ID is provided, requests will use the "default" session.
-
 ## Available Endpoints
 
 ### 1. List Models
@@ -267,62 +250,6 @@ Download from [HuggingFace LiteRT Community](https://huggingface.co/litert-commu
 - `auto` (default): Automatically choose based on image
 
 
-#### Chat Completions with Multi-Session
-
-Maintain separate conversation contexts using session IDs:
-
-**Method 1: Using conversation_id field (OpenAI Conversations API standard)**
-```bash
-# User 1's conversation
-curl http://<phone-ip>:8080/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "llama-mock-model",
-    "conversation_id": "user1",
-    "messages": [
-      {"role": "user", "content": "My name is Alice"}
-    ]
-  }'
-
-# User 2's conversation (separate context)
-curl http://<phone-ip>:8080/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "llama-mock-model",
-    "conversation_id": "user2",
-    "messages": [
-      {"role": "user", "content": "My name is Bob"}
-    ]
-  }'
-```
-
-**Method 2: Using user field (OpenAI standard)**
-```bash
-curl http://<phone-ip>:8080/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "llama-mock-model",
-    "user": "alice@example.com",
-    "messages": [
-      {"role": "user", "content": "What did I tell you my name was?"}
-    ]
-  }'
-```
-
-**Method 3: Using X-Session-ID header**
-```bash
-curl http://<phone-ip>:8080/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "X-Session-ID: project-alpha" \
-  -d '{
-    "model": "llama-mock-model",
-    "messages": [
-      {"role": "user", "content": "Hello"}
-    ]
-  }'
-```
-
-
 ### 3. Stored Chat Completions
 
 HostAI supports storing chat completions for later retrieval by setting the `store` parameter to `true`. This allows you to persist completions and their metadata.
@@ -548,76 +475,7 @@ data: [DONE]
 ```
 
 
-### 5. Session Management
-
-Manage conversation sessions.
-
-#### List Active Sessions
-
-Get a list of all active conversation sessions:
-
-```bash
-curl http://<phone-ip>:8080/v1/sessions
-```
-
-**Response:**
-```json
-{
-  "object": "list",
-  "data": [
-    {
-      "id": "default",
-      "object": "session"
-    },
-    {
-      "id": "user1",
-      "object": "session"
-    },
-    {
-      "id": "alice@example.com",
-      "object": "session"
-    }
-  ],
-  "count": 3
-}
-```
-
-#### Delete a Specific Session
-
-Clear a specific conversation session and its context:
-
-```bash
-curl -X DELETE http://<phone-ip>:8080/v1/sessions/user1
-```
-
-**Response:**
-```json
-{
-  "deleted": true,
-  "id": "user1",
-  "object": "session"
-}
-```
-
-#### Clear All Sessions
-
-Clear all conversation sessions:
-
-```bash
-curl -X DELETE http://<phone-ip>:8080/v1/sessions
-```
-
-**Response:**
-```json
-{
-  "deleted": true,
-  "count": 3,
-  "object": "sessions"
-}
-```
-
-
-### 6. Health Check
+### 5. Health Check
 
 Check if the server is running.
 
@@ -673,32 +531,6 @@ stream = client.chat.completions.create(
 for chunk in stream:
     if chunk.choices[0].delta.content is not None:
         print(chunk.choices[0].delta.content, end='')
-
-# Multi-session support: Use 'user' parameter to maintain separate conversations
-response1 = client.chat.completions.create(
-    model="llama-mock-model",
-    user="alice",  # Conversation for Alice
-    messages=[
-        {"role": "user", "content": "My favorite color is blue"}
-    ]
-)
-
-response2 = client.chat.completions.create(
-    model="llama-mock-model",
-    user="bob",  # Separate conversation for Bob
-    messages=[
-        {"role": "user", "content": "My favorite color is red"}
-    ]
-)
-
-# Continue Alice's conversation
-response3 = client.chat.completions.create(
-    model="llama-mock-model",
-    user="alice",  # Same user, continues conversation context
-    messages=[
-        {"role": "user", "content": "What's my favorite color?"}
-    ]
-)
 
 # Multimodal: Chat with image URL
 response_with_image = client.chat.completions.create(
