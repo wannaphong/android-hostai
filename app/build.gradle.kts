@@ -67,7 +67,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     
     // LiteRT for LLM inference
-    implementation("com.google.ai.edge.litertlm:litertlm-android:0.9.0")
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.10.1")
     
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
