@@ -2,6 +2,8 @@
 
 An Android application that uses [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) to host an OpenAI-compatible API server, allowing you to run LLM models on your phone as a web service.
 
+> Warning: It's still alpha!
+
 ## Features
 
 - 🚀 OpenAI-compatible API endpoints
