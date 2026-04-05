@@ -37,6 +37,9 @@ class SettingsActivity : AppCompatActivity() {
         
         // Load max concurrency setting
         binding.maxConcurrencyEditText.setText(settingsManager.getMaxConcurrency().toString())
+
+        // Load max context length setting
+        binding.maxContextLengthEditText.setText(settingsManager.getMaxContextLength().toString())
         
         // Load feature toggles
         binding.webChatSwitch.isChecked = settingsManager.isWebChatEnabled()
@@ -120,9 +123,19 @@ class SettingsActivity : AppCompatActivity() {
             Toast.makeText(this, R.string.invalid_max_concurrency, Toast.LENGTH_LONG).show()
             return
         }
-        
+
+        // Validate and save max context length
+        val maxContextLengthText = binding.maxContextLengthEditText.text.toString()
+        val maxContextLength = maxContextLengthText.toIntOrNull()
+
+        if (maxContextLength == null || maxContextLength < 512) {
+            Toast.makeText(this, R.string.invalid_max_context_length, Toast.LENGTH_LONG).show()
+            return
+        }
+
         settingsManager.setCustomPort(port)
         settingsManager.setMaxConcurrency(maxConcurrency)
+        settingsManager.setMaxContextLength(maxContextLength)
         
         // Save feature toggles
         settingsManager.setWebChatEnabled(binding.webChatSwitch.isChecked)

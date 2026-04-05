@@ -116,13 +116,17 @@ class LlamaModel(
             
             LogManager.i(TAG, "Using ${if (useGpu) "GPU" else "CPU"} backend for inference")
             
+            // Get max context length from settings
+            val maxContextLength = settingsManager.getMaxContextLength()
+            LogManager.i(TAG, "Using max context length: $maxContextLength tokens")
+
             // Create engine config with selected backend and multimodal support
             // Vision backend: GPU for better performance (Gemma-3N requires GPU for vision)
             // Audio backend: CPU (Gemma-3N requires CPU for audio)
             val engineConfig = EngineConfig(
                 modelPath = modelPath,
                 backend = backend,
-                maxNumTokens = DEFAULT_MAX_TOKENS,
+                maxNumTokens = maxContextLength,
                 visionBackend = Backend.GPU(),  // Enable vision processing
                 audioBackend = Backend.CPU()     // Enable audio processing
             )

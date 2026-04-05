@@ -87,4 +87,8 @@
     <string name="max_concurrency_desc">Maximum number of simultaneous inference requests. Excess requests wait in a FIFO queue. Restart server to apply. (Default: 1)</string>
     <string name="max_concurrency_hint">Max concurrent requests (≥ 1)</string>
     <string name="invalid_max_concurrency">Invalid max concurrency. Please enter a value of 1 or more.</string>
+    <string name="max_context_length_title">Max Context Length</string>
+    <string name="max_context_length_desc">Maximum number of tokens the engine can hold in its context window. Increase this if you get \"Input token ids are too long\" errors. Reload the model to apply. (Default: 2048)</string>
+    <string name="max_context_length_hint">Max context tokens (≥ 512)</string>
+    <string name="invalid_max_context_length">Invalid max context length. Please enter a value of 512 or more.</string>
 </resources>

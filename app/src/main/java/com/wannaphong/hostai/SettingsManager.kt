@@ -18,9 +18,11 @@ class SettingsManager(context: Context) {
         private const val KEY_LOGGING_ENABLED = "logging_enabled"
         private const val KEY_USE_GPU_BACKEND = "use_gpu_backend"
         private const val KEY_MAX_CONCURRENCY = "max_concurrency"
+        private const val KEY_MAX_CONTEXT_LENGTH = "max_context_length"
         
         const val DEFAULT_PORT = 8080
         const val DEFAULT_MAX_CONCURRENCY = 1
+        const val DEFAULT_MAX_CONTEXT_LENGTH = 2048
     }
     
     /**
@@ -119,5 +121,19 @@ class SettingsManager(context: Context) {
      */
     fun setMaxConcurrency(concurrency: Int) {
         prefs.edit().putInt(KEY_MAX_CONCURRENCY, concurrency).apply()
+    }
+
+    /**
+     * Get max context length (number of tokens) for the LLM engine (default: 2048)
+     */
+    fun getMaxContextLength(): Int {
+        return prefs.getInt(KEY_MAX_CONTEXT_LENGTH, DEFAULT_MAX_CONTEXT_LENGTH)
+    }
+
+    /**
+     * Set max context length (number of tokens) for the LLM engine
+     */
+    fun setMaxContextLength(length: Int) {
+        prefs.edit().putInt(KEY_MAX_CONTEXT_LENGTH, length).apply()
     }
 }
