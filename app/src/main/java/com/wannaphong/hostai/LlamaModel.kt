@@ -3,7 +3,7 @@ package com.wannaphong.hostai
 import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
-import android.os.ParcelFileDescriptor
+import android.provider.OpenableColumns
 import android.util.Log
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Contents
@@ -65,12 +65,6 @@ class LlamaModel(
     @Volatile private var engine: Engine? = null
     private val scope = CoroutineScope(Dispatchers.IO)
 
-    // ParcelFileDescriptor kept open for the lifetime of the engine when the model is
-    // loaded from a content:// URI. LiteRT requires a file-system path, so we open a
-    // ParcelFileDescriptor and pass "/proc/self/fd/{fd}" to EngineConfig. The PFD must
-    // stay open as long as the engine uses the underlying file.
-    @Volatile private var modelPfd: ParcelFileDescriptor? = null
-
     // Global Mutex to serialise Engine.createConversation() calls.
     // The LiteRT engine may not safely support concurrent conversation creation.
     private val engineCreationLock = Mutex()
@@ -105,29 +99,46 @@ class LlamaModel(
             return true
         }
 
-        // Resolve the actual file-system path that LiteRT will use.
-        // For content:// URIs we open a ParcelFileDescriptor and use the
-        // kernel's /proc/self/fd/<n> symlink so no file copy is needed.
         val enginePath: String
         if (modelPath.startsWith("content://")) {
-            return try {
-                val uri = Uri.parse(modelPath)
-                val pfd = contentResolver.openFileDescriptor(uri, "r")
-                    ?: run {
-                        LogManager.e(TAG, "Failed to open file descriptor for URI: $modelPath")
+            // LiteRT's native engine requires a real file-system path with the
+            // correct file extension – it cannot follow /proc/self/fd/<n> symlinks.
+            // Copy the model from the content URI to the app's internal model cache
+            // directory, keeping the original filename (and therefore the .litertlm
+            // extension).  Subsequent starts reuse the cached copy so no extra I/O
+            // is needed after the first load.
+            val uri = Uri.parse(modelPath)
+            val fileName = getFileNameFromUri(uri)
+                ?: uri.lastPathSegment?.substringAfterLast('/')?.substringAfterLast(':')
+                ?: "model.litertlm"
+            modelName = fileName
+
+            val fileSize = getFileSizeFromUri(uri)
+
+            val cachedFile = getCachedModelFile(fileName, fileSize)
+            enginePath = if (cachedFile != null) {
+                LogManager.i(TAG, "Using cached model file: ${cachedFile.absolutePath}")
+                cachedFile.absolutePath
+            } else {
+                val sizeDisplay = if (fileSize > 0) "${fileSize / 1024 / 1024} MB" else "unknown size"
+                LogManager.i(TAG, "Copying model from URI to internal cache ($sizeDisplay)…")
+                val destFile = File(getModelCacheDir(), fileName)
+                try {
+                    contentResolver.openInputStream(uri)?.use { input ->
+                        destFile.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
+                    } ?: run {
+                        LogManager.e(TAG, "Failed to open input stream for URI: $modelPath")
                         return false
                     }
-                modelPfd = pfd
-                enginePath = "/proc/self/fd/${pfd.fd}"
-                // Derive a display name from the URI path component
-                modelName = uri.lastPathSegment?.substringAfterLast('/')
-                    ?.substringAfterLast(':')
-                    ?: "litert-model"
-                LogManager.i(TAG, "Opened URI via fd $enginePath (model: $modelName)")
-                loadFromPath(enginePath)
-            } catch (e: Exception) {
-                LogManager.e(TAG, "Failed to open URI: ${e.message}", e)
-                false
+                } catch (e: Exception) {
+                    LogManager.e(TAG, "Failed to copy model from URI: ${e.message}", e)
+                    destFile.delete()
+                    return false
+                }
+                LogManager.i(TAG, "Model cached at: ${destFile.absolutePath}")
+                destFile.absolutePath
             }
         } else {
             // It's a plain file path
@@ -140,12 +151,64 @@ class LlamaModel(
                 return false
             }
             enginePath = modelPath
-            return loadFromPath(enginePath)
+        }
+        return loadFromPath(enginePath)
+    }
+
+    /** Returns the cache directory used to store model copies from content URIs. */
+    private fun getModelCacheDir(): File {
+        val dir = File(context.filesDir, "model_cache")
+        if (!dir.exists() && !dir.mkdirs()) {
+            LogManager.w(TAG, "Failed to create model cache directory: ${dir.absolutePath}")
+        }
+        return dir
+    }
+
+    /**
+     * Returns the display filename reported by ContentResolver for [uri],
+     * or null if the query fails.
+     */
+    private fun getFileNameFromUri(uri: Uri): String? {
+        return try {
+            contentResolver.query(
+                uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0) else null
+            }
+        } catch (e: Exception) {
+            null
         }
     }
 
     /**
-     * Initialise the LiteRT engine from a file-system path (or /proc/self/fd/<n> symlink).
+     * Returns the file size (bytes) reported by ContentResolver for [uri],
+     * or -1 if unknown.
+     */
+    private fun getFileSizeFromUri(uri: Uri): Long {
+        return try {
+            contentResolver.query(
+                uri, arrayOf(OpenableColumns.SIZE), null, null, null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getLong(0) else -1L
+            } ?: -1L
+        } catch (e: Exception) {
+            -1L
+        }
+    }
+
+    /**
+     * Returns the cached file if it exists, has the right name, and (when
+     * [expectedSize] is positive) its size matches.  Returns null otherwise.
+     */
+    private fun getCachedModelFile(fileName: String, expectedSize: Long): File? {
+        val file = File(getModelCacheDir(), fileName)
+        if (!file.exists()) return null
+        if (expectedSize > 0 && file.length() != expectedSize) return null
+        return file
+    }
+
+    /**
+     * Initialise the LiteRT engine from a real file-system path.
      */
     private fun loadFromPath(enginePath: String): Boolean {
         return try {
@@ -198,11 +261,6 @@ class LlamaModel(
             LogManager.e(TAG, "Failed to load model: ${e.message}", e)
             engine = null
             isLoaded = false
-            // Close the PFD if we opened one and loading failed
-            try { modelPfd?.close() } catch (ex: Exception) {
-                LogManager.w(TAG, "Error closing model PFD after load failure: ${ex.message}")
-            }
-            modelPfd = null
             false
         }
     }
@@ -631,13 +689,6 @@ class LlamaModel(
                 scope.cancel()
                 engine?.close()
                 engine = null
-                // Close the model file descriptor (opened for content:// URI models).
-                // This must happen AFTER the engine is closed so the native code
-                // is no longer reading from /proc/self/fd/<n>.
-                try { modelPfd?.close() } catch (e: Exception) {
-                    LogManager.w(TAG, "Error closing model PFD: ${e.message}")
-                }
-                modelPfd = null
             }
 
             isLoaded = false
