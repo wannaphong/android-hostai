@@ -19,6 +19,7 @@ class SettingsManager(context: Context) {
         private const val KEY_USE_GPU_BACKEND = "use_gpu_backend"
         private const val KEY_MAX_CONCURRENCY = "max_concurrency"
         private const val KEY_MAX_CONTEXT_LENGTH = "max_context_length"
+        private const val KEY_MULTIMODAL_ENABLED = "multimodal_enabled"
         
         const val DEFAULT_PORT = 8080
         const val DEFAULT_MAX_CONCURRENCY = 1
@@ -135,5 +136,21 @@ class SettingsManager(context: Context) {
      */
     fun setMaxContextLength(length: Int) {
         prefs.edit().putInt(KEY_MAX_CONTEXT_LENGTH, length).apply()
+    }
+
+    /**
+     * Check if multimodal mode is enabled (default: false).
+     * Enable only for multimodal models (e.g. Gemma-3N) that include vision/audio components.
+     * Text-only models will fail to load when this is enabled.
+     */
+    fun isMultimodalEnabled(): Boolean {
+        return prefs.getBoolean(KEY_MULTIMODAL_ENABLED, false)
+    }
+
+    /**
+     * Set multimodal mode enabled state
+     */
+    fun setMultimodalEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_MULTIMODAL_ENABLED, enabled).apply()
     }
 }

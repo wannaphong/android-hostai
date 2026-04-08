@@ -91,4 +91,6 @@
     <string name="max_context_length_desc">Maximum number of tokens the engine can hold in its context window. Increase this if you get \"Input token ids are too long\" errors. Reload the model to apply. (Default: 2048)</string>
     <string name="max_context_length_hint">Max context tokens (≥ 512)</string>
     <string name="invalid_max_context_length">Invalid max context length. Please enter a value of 512 or more.</string>
+    <string name="multimodal_mode_title">Multimodal Model</string>
+    <string name="multimodal_mode_desc">Enable for multimodal models that include vision and audio components (e.g. Gemma 3N). Keep disabled for text-only models such as Gemma 3 1B/4B.</string>
 </resources>

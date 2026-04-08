@@ -161,16 +161,27 @@ class LlamaModel(
             val maxContextLength = settingsManager.getMaxContextLength()
             LogManager.i(TAG, "Using max context length: $maxContextLength tokens")
 
-            // Create engine config with selected backend and multimodal support
-            // Vision backend: GPU for better performance (Gemma-3N requires GPU for vision)
-            // Audio backend: CPU (Gemma-3N requires CPU for audio)
-            val engineConfig = EngineConfig(
-                modelPath = enginePath,
-                backend = backend,
-                maxNumTokens = maxContextLength,
-                visionBackend = Backend.GPU(),  // Enable vision processing
-                audioBackend = Backend.CPU()     // Enable audio processing
-            )
+            // Create engine config with selected backend.
+            // Only add vision/audio backends for multimodal models (e.g. Gemma-3N).
+            // Text-only models fail with "Unsupported or unknown file format" when
+            // these backends are specified.
+            val useMultimodal = settingsManager.isMultimodalEnabled()
+            val engineConfig = if (useMultimodal) {
+                LogManager.i(TAG, "Multimodal mode enabled: adding vision (GPU) and audio (CPU) backends")
+                EngineConfig(
+                    modelPath = enginePath,
+                    backend = backend,
+                    maxNumTokens = maxContextLength,
+                    visionBackend = Backend.GPU(),
+                    audioBackend = Backend.CPU()
+                )
+            } else {
+                EngineConfig(
+                    modelPath = enginePath,
+                    backend = backend,
+                    maxNumTokens = maxContextLength
+                )
+            }
             
             // Initialize engine (this can take time, already on IO thread)
             val newEngine = Engine(engineConfig)

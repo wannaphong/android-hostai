@@ -51,6 +51,9 @@ class SettingsActivity : AppCompatActivity() {
         
         // Load backend setting
         binding.gpuBackendSwitch.isChecked = settingsManager.isGpuBackendEnabled()
+        
+        // Load multimodal setting
+        binding.multimodalSwitch.isChecked = settingsManager.isMultimodalEnabled()
     }
     
     private fun setupUI() {
@@ -147,6 +150,9 @@ class SettingsActivity : AppCompatActivity() {
         
         // Save backend setting
         settingsManager.setGpuBackendEnabled(binding.gpuBackendSwitch.isChecked)
+        
+        // Save multimodal setting
+        settingsManager.setMultimodalEnabled(binding.multimodalSwitch.isChecked)
         
         Toast.makeText(this, R.string.settings_saved, Toast.LENGTH_SHORT).show()
         
