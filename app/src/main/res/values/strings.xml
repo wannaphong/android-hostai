@@ -80,7 +80,10 @@
     <string name="licenses">Third Party Licenses</string>
     <string name="view_licenses">View Licenses</string>
     <string name="backend_settings">Backend Settings</string>
-    <string name="backend_settings_desc">Choose between GPU or CPU backend for model inference</string>
+    <string name="backend_settings_desc">Choose the inference backend. GPU/NPU provide faster inference on supported devices; CPU is the most compatible.</string>
+    <string name="backend_cpu">CPU</string>
+    <string name="backend_gpu">GPU</string>
+    <string name="backend_npu">NPU (Neural Processing Unit)</string>
     <string name="use_gpu_backend">Use GPU Backend</string>
     <string name="use_gpu_backend_desc">GPU may provide faster inference on supported devices. CPU is more compatible.</string>
     <string name="max_concurrency_title">Max Concurrency</string>

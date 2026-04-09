@@ -50,7 +50,11 @@ class SettingsActivity : AppCompatActivity() {
         binding.loggingSwitch.isChecked = settingsManager.isLoggingEnabled()
         
         // Load backend setting
-        binding.gpuBackendSwitch.isChecked = settingsManager.isGpuBackendEnabled()
+        when (settingsManager.getBackend()) {
+            SettingsManager.BACKEND_GPU -> binding.backendGpuRadio.isChecked = true
+            SettingsManager.BACKEND_NPU -> binding.backendNpuRadio.isChecked = true
+            else -> binding.backendCpuRadio.isChecked = true
+        }
         
         // Load multimodal setting
         binding.multimodalSwitch.isChecked = settingsManager.isMultimodalEnabled()
@@ -149,7 +153,12 @@ class SettingsActivity : AppCompatActivity() {
         settingsManager.setLoggingEnabled(binding.loggingSwitch.isChecked)
         
         // Save backend setting
-        settingsManager.setGpuBackendEnabled(binding.gpuBackendSwitch.isChecked)
+        val backend = when (binding.backendRadioGroup.checkedRadioButtonId) {
+            R.id.backendGpuRadio -> SettingsManager.BACKEND_GPU
+            R.id.backendNpuRadio -> SettingsManager.BACKEND_NPU
+            else -> SettingsManager.BACKEND_CPU
+        }
+        settingsManager.setBackend(backend)
         
         // Save multimodal setting
         settingsManager.setMultimodalEnabled(binding.multimodalSwitch.isChecked)

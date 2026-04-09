@@ -17,10 +17,15 @@ class SettingsManager(context: Context) {
         private const val KEY_CHAT_COMPLETIONS_ENABLED = "chat_completions_enabled"
         private const val KEY_LOGGING_ENABLED = "logging_enabled"
         private const val KEY_USE_GPU_BACKEND = "use_gpu_backend"
+        private const val KEY_BACKEND = "backend"
         private const val KEY_MAX_CONCURRENCY = "max_concurrency"
         private const val KEY_MAX_CONTEXT_LENGTH = "max_context_length"
         private const val KEY_MULTIMODAL_ENABLED = "multimodal_enabled"
-        
+
+        const val BACKEND_CPU = "cpu"
+        const val BACKEND_GPU = "gpu"
+        const val BACKEND_NPU = "npu"
+
         const val DEFAULT_PORT = 8080
         const val DEFAULT_MAX_CONCURRENCY = 1
         const val DEFAULT_MAX_CONTEXT_LENGTH = 2048
@@ -97,17 +102,38 @@ class SettingsManager(context: Context) {
     }
     
     /**
-     * Check if GPU backend is enabled (default: false, uses CPU for compatibility)
+     * Get the selected inference backend ("cpu", "gpu", or "npu").
+     * Migrates the legacy boolean GPU setting on first read.
      */
-    fun isGpuBackendEnabled(): Boolean {
-        return prefs.getBoolean(KEY_USE_GPU_BACKEND, false)
+    fun getBackend(): String {
+        val stored = prefs.getString(KEY_BACKEND, null)
+        if (stored != null) return stored
+        // Migrate legacy boolean setting: if GPU was enabled, default to GPU.
+        val legacyGpu = prefs.getBoolean(KEY_USE_GPU_BACKEND, false)
+        return if (legacyGpu) BACKEND_GPU else BACKEND_CPU
     }
-    
+
     /**
-     * Set GPU backend enabled state
+     * Set the inference backend ("cpu", "gpu", or "npu").
      */
+    fun setBackend(backend: String) {
+        prefs.edit().putString(KEY_BACKEND, backend).apply()
+    }
+
+    /**
+     * Check if GPU backend is enabled.
+     * @deprecated Use [getBackend] instead.
+     */
+    @Deprecated("Use getBackend() instead", ReplaceWith("getBackend() == BACKEND_GPU"))
+    fun isGpuBackendEnabled(): Boolean = getBackend() == BACKEND_GPU
+
+    /**
+     * Set GPU backend enabled state.
+     * @deprecated Use [setBackend] instead.
+     */
+    @Deprecated("Use setBackend() instead")
     fun setGpuBackendEnabled(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_USE_GPU_BACKEND, enabled).apply()
+        setBackend(if (enabled) BACKEND_GPU else BACKEND_CPU)
     }
     
     /**

@@ -15,12 +15,10 @@ import com.google.ai.edge.litertlm.EngineConfig
 import com.google.ai.edge.litertlm.Message
 import com.google.ai.edge.litertlm.MessageCallback
 import com.google.ai.edge.litertlm.SamplerConfig
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -87,8 +85,6 @@ class LlamaModel(
     companion object {
         private const val TAG = "LlamaModel"
         private const val DEFAULT_MAX_TOKENS = 2048
-        // Delay between streaming token emissions (in milliseconds)
-        private const val TOKEN_EMISSION_DELAY_MS = 10L
     }
     
     fun loadModel(modelPath: String): Boolean {
@@ -220,14 +216,28 @@ class LlamaModel(
             LogManager.i(TAG, "Initializing LiteRT with model: $modelName")
 
             // Get backend preference from settings
-            val useGpu = settingsManager.isGpuBackendEnabled()
-            val backend = if (useGpu) Backend.GPU() else Backend.CPU()
-            
-            LogManager.i(TAG, "Using ${if (useGpu) "GPU" else "CPU"} backend for inference")
-            
+            val backend = when (settingsManager.getBackend()) {
+                SettingsManager.BACKEND_NPU -> {
+                    LogManager.i(TAG, "Using NPU backend for inference")
+                    Backend.NPU(nativeLibraryDir = context.applicationInfo.nativeLibraryDir)
+                }
+                SettingsManager.BACKEND_GPU -> {
+                    LogManager.i(TAG, "Using GPU backend for inference")
+                    Backend.GPU()
+                }
+                else -> {
+                    LogManager.i(TAG, "Using CPU backend for inference")
+                    Backend.CPU()
+                }
+            }
+
             // Get max context length from settings
             val maxContextLength = settingsManager.getMaxContextLength()
             LogManager.i(TAG, "Using max context length: $maxContextLength tokens")
+
+            // Compiled-kernel cache directory: speeds up subsequent model loads by reusing
+            // pre-compiled GPU/NPU kernels instead of recompiling them on every launch.
+            val cacheDir = File(context.cacheDir, "litert_cache").also { it.mkdirs() }.absolutePath
 
             // Create engine config with selected backend.
             // Only add vision/audio backends for multimodal models (e.g. Gemma-3N).
@@ -240,6 +250,7 @@ class LlamaModel(
                     modelPath = enginePath,
                     backend = backend,
                     maxNumTokens = maxContextLength,
+                    cacheDir = cacheDir,
                     visionBackend = Backend.GPU(),
                     audioBackend = Backend.CPU()
                 )
@@ -247,7 +258,8 @@ class LlamaModel(
                 EngineConfig(
                     modelPath = enginePath,
                     backend = backend,
-                    maxNumTokens = maxContextLength
+                    maxNumTokens = maxContextLength,
+                    cacheDir = cacheDir
                 )
             }
             
@@ -259,7 +271,7 @@ class LlamaModel(
             engine = newEngine
             isLoaded = true
             
-            LogManager.i(TAG, "LiteRT engine initialized successfully with ${if (useGpu) "GPU" else "CPU"} backend")
+            LogManager.i(TAG, "LiteRT engine initialized successfully with ${settingsManager.getBackend().uppercase()} backend")
             true
         } catch (e: Exception) {
             Log.e(TAG, "Failed to load model", e)
@@ -479,11 +491,7 @@ class LlamaModel(
         if (modelPath == "mock-model") {
             return scope.launch {
                 val mockResponse = "This is a mock streaming response from the model. "
-                val words = mockResponse.split(" ")
-                for (word in words) {
-                    onToken("$word ")
-                    delay(50)
-                }
+                onToken(mockResponse)
             }
         }
 
@@ -502,49 +510,24 @@ class LlamaModel(
                     // Use suspendCancellableCoroutine to bridge the async callback with coroutines.
                     suspendCancellableCoroutine<Unit> { continuation ->
                         val resumed = AtomicBoolean(false)
-                        val streamingCompleted = CompletableDeferred<Unit>()
 
                         val callback = object : MessageCallback {
                             override fun onMessage(message: Message) {
-                                val fullText = message.toString()
-                                scope.launch {
-                                    try {
-                                        val parts = fullText.split(" ")
-                                        for ((index, part) in parts.withIndex()) {
-                                            if (part.isNotEmpty()) {
-                                                onToken(part)
-                                                delay(TOKEN_EMISSION_DELAY_MS)
-                                            }
-                                            if (index < parts.size - 1) {
-                                                onToken(" ")
-                                                delay(TOKEN_EMISSION_DELAY_MS)
-                                            }
-                                        }
-                                    } catch (e: Exception) {
-                                        LogManager.e(TAG, "Error during chunked streaming", e)
-                                    } finally {
-                                        streamingCompleted.complete(Unit)
-                                    }
-                                }
+                                // Emit each token chunk directly as it arrives from the engine.
+                                // No buffering or artificial delays — let the native engine pace output.
+                                onToken(message.toString())
                             }
 
                             override fun onDone() {
                                 LogManager.i(TAG, "Streaming completed")
-                                scope.launch {
-                                    if (!streamingCompleted.isCompleted) {
-                                        streamingCompleted.complete(Unit)
-                                    }
-                                    streamingCompleted.await()
-                                    if (resumed.compareAndSet(false, true)) {
-                                        continuation.resume(Unit)
-                                    }
+                                if (resumed.compareAndSet(false, true)) {
+                                    continuation.resume(Unit)
                                 }
                             }
 
                             override fun onError(throwable: Throwable) {
                                 Log.e(TAG, "Streaming error", throwable)
                                 LogManager.e(TAG, "Streaming error: ${throwable.message}", throwable)
-                                streamingCompleted.complete(Unit)
                                 if (resumed.compareAndSet(false, true)) {
                                     continuation.resumeWithException(throwable)
                                 }
@@ -592,11 +575,7 @@ class LlamaModel(
         if (modelPath == "mock-model") {
             return scope.launch {
                 val mockResponse = "This is a mock multimodal streaming response from the model with ${contents.size} content parts. "
-                val words = mockResponse.split(" ")
-                for (word in words) {
-                    onToken("$word ")
-                    delay(50)
-                }
+                onToken(mockResponse)
             }
         }
 
@@ -614,49 +593,23 @@ class LlamaModel(
 
                     suspendCancellableCoroutine<Unit> { continuation ->
                         val resumed = AtomicBoolean(false)
-                        val streamingCompleted = CompletableDeferred<Unit>()
 
                         val callback = object : MessageCallback {
                             override fun onMessage(message: Message) {
-                                val fullText = message.toString()
-                                scope.launch {
-                                    try {
-                                        val parts = fullText.split(" ")
-                                        for ((index, part) in parts.withIndex()) {
-                                            if (part.isNotEmpty()) {
-                                                onToken(part)
-                                                delay(TOKEN_EMISSION_DELAY_MS)
-                                            }
-                                            if (index < parts.size - 1) {
-                                                onToken(" ")
-                                                delay(TOKEN_EMISSION_DELAY_MS)
-                                            }
-                                        }
-                                    } catch (e: Exception) {
-                                        LogManager.e(TAG, "Error during chunked streaming", e)
-                                    } finally {
-                                        streamingCompleted.complete(Unit)
-                                    }
-                                }
+                                // Emit each token chunk directly as it arrives from the engine.
+                                onToken(message.toString())
                             }
 
                             override fun onDone() {
                                 LogManager.i(TAG, "Multimodal streaming completed")
-                                scope.launch {
-                                    if (!streamingCompleted.isCompleted) {
-                                        streamingCompleted.complete(Unit)
-                                    }
-                                    streamingCompleted.await()
-                                    if (resumed.compareAndSet(false, true)) {
-                                        continuation.resume(Unit)
-                                    }
+                                if (resumed.compareAndSet(false, true)) {
+                                    continuation.resume(Unit)
                                 }
                             }
 
                             override fun onError(throwable: Throwable) {
                                 Log.e(TAG, "Multimodal streaming error", throwable)
                                 LogManager.e(TAG, "Multimodal streaming error: ${throwable.message}", throwable)
-                                streamingCompleted.complete(Unit)
                                 if (resumed.compareAndSet(false, true)) {
                                     continuation.resumeWithException(throwable)
                                 }
