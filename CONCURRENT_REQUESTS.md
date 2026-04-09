@@ -2,173 +2,127 @@
 
 ## Overview
 
-HostAI now supports handling multiple concurrent requests efficiently and safely. The implementation ensures that:
+HostAI accepts multiple concurrent HTTP requests, but the underlying LiteRT
+inference engine supports **only one active conversation (session) at a time**.
+Because of this hardware/SDK constraint, all inference operations are serialised
+through a single `inferenceMutex`:
 
-1. **Multiple requests to different sessions run in parallel** - No blocking between different users/contexts
-2. **Multiple requests to the same session are serialized** - Prevents race conditions and ensures conversation consistency
-3. **Thread-safe access to LiteRT Conversation objects** - Uses per-session locks to coordinate access
+- Incoming requests are queued in FIFO order by the `requestSemaphore` in
+  `OpenAIApiServer` (controlled by the *Max Concurrency* setting).
+- Each request then acquires `inferenceMutex` in `LlamaModel` before creating a
+  conversation, runs inference, and closes the conversation – all while holding
+  the lock.
+- Only after the conversation is fully closed is the lock released and the next
+  queued request allowed to proceed.
+
+This guarantees that `Engine.createConversation()` is never called while another
+session is still open, eliminating the
+`FAILED_PRECONDITION: A session already exists` error that previously occurred
+when concurrency > 1.
 
 ## Implementation Details
 
-### Per-Session Locking
-
-The implementation uses `ReentrantLock` for each session, stored in a `ConcurrentHashMap`:
+### Global Inference Mutex
 
 ```kotlin
-private val sessionLocks = ConcurrentHashMap<String, ReentrantLock>()
+// LlamaModel.kt
+private val inferenceMutex = Mutex()
 ```
 
-When a request comes in for a specific session, the code:
-1. Gets or creates a lock for that session
-2. Acquires the lock using `withLock { }`
-3. Performs the generation operation
-4. Releases the lock automatically
+The mutex is held for the **complete** conversation lifetime in every
+`generate*()` method:
+
+```kotlin
+// inferenceMutex is imported as mutexWithLock (see LlamaModel.kt imports)
+inferenceMutex.mutexWithLock {
+    val conversation = createConversation(config) ?: return@mutexWithLock "Error"
+    try {
+        // ... send message / stream tokens ...
+    } finally {
+        conversation.close()   // lock released only after close()
+    }
+}
+```
+
+### Request Queue (Semaphore)
+
+`OpenAIApiServer` keeps a `Semaphore` that limits the number of requests
+permitted past the HTTP layer at once. This prevents excessive memory use when
+many clients connect simultaneously:
+
+```kotlin
+// OpenAIApiServer.kt
+private var requestSemaphore = Semaphore(maxConcurrency, true /* fair */)
+```
+
+The semaphore is initialised from the *Max Concurrency* value in Settings. With
+the inference mutex in place this value mainly controls how many requests are
+held in memory while waiting for the engine – it no longer causes
+concurrent-session errors regardless of what value is chosen.
 
 ### Methods Protected
 
-All generation methods are protected with per-session locks:
-- `generate()` - Synchronous text generation
-- `generateWithContents()` - Synchronous multimodal generation
-- `generateStream()` - Asynchronous streaming text generation
-- `generateStreamWithContents()` - Asynchronous streaming multimodal generation
+All generation methods hold `inferenceMutex` for the full conversation lifetime:
 
-### Example Scenarios
+- `generate()` – synchronous text generation
+- `generateWithContents()` – synchronous multimodal generation
+- `generateStream()` – streaming text generation
+- `generateStreamWithContents()` – streaming multimodal generation
 
-#### Scenario 1: Different Sessions (Parallel Execution)
+## Behaviour Under Load
+
 ```
-Request 1 (session: alice) → Lock alice → Generate → Release
-Request 2 (session: bob)   → Lock bob   → Generate → Release
+Request 1 → acquire semaphore → acquire inferenceMutex → run inference → close conversation → release mutex → release semaphore
+Request 2 → acquire semaphore → wait for inferenceMutex → acquire inferenceMutex → run inference → …
+Request 3 → wait for semaphore → …
 ```
-Both requests run **concurrently** because they use different locks.
 
-#### Scenario 2: Same Session (Sequential Execution)
-```
-Request 1 (session: alice) → Lock alice → Generate (5s) → Release
-Request 2 (session: alice) → Wait for lock → Lock alice → Generate (5s) → Release
-```
-Request 2 **waits** for Request 1 to complete because they share the same lock.
-
-## Benefits
-
-### 1. Correctness
-- Prevents race conditions when multiple clients use the same session
-- Maintains conversation context integrity
-- Ensures deterministic behavior
-
-### 2. Performance
-- Requests to different sessions execute in parallel
-- No global lock that would serialize all requests
-- Efficient use of multiple CPU cores
-
-### 3. Resource Management
-- Locks are automatically cleaned up when sessions are cleared
-- No memory leaks from orphaned locks
-- Uses lazy lock creation (only when needed)
+Requests are processed in the order they arrive (FIFO), so clients see
+predictable queuing rather than random failures.
 
 ## Usage Recommendations
 
 ### For API Clients
 
-1. **Use different session IDs for different users/contexts**
-   ```bash
-   # User Alice
-   curl -H "X-Session-ID: alice" ...
-   
-   # User Bob (runs in parallel)
-   curl -H "X-Session-ID: bob" ...
-   ```
+1. **Each request is independent** – there is no shared in-memory session state
+   between calls. Conversation history must be sent in full with every request
+   (standard OpenAI format).
 
-2. **Reuse session IDs for conversation continuity**
-   ```bash
-   # First message from Alice
-   curl -H "X-Session-ID: alice" ... "Hello"
-   
-   # Follow-up from Alice (maintains context)
-   curl -H "X-Session-ID: alice" ... "What's my name?"
-   ```
+2. **Expect queuing under concurrent load** – because inference is serialised,
+   the second request will wait for the first to finish. Plan timeouts
+   accordingly (the server allows up to 5 minutes per request).
 
-3. **Be aware of sequential processing within sessions**
-   - Multiple concurrent requests to the same session will queue
-   - Consider using unique session IDs if requests are independent
+3. **Use the `stream` parameter for long responses** – streaming lets the client
+   start reading tokens while the server is still generating, reducing
+   perceived latency.
 
 ### For Server Configuration
 
-- The Javalin server already handles concurrent HTTP requests efficiently
-- No configuration changes needed for the web server
-- The LlamaModel handles per-session synchronization automatically
-
-## Testing Concurrent Requests
-
-### Using curl (Bash)
-
-```bash
-# Start two requests to different sessions in parallel
-curl -H "X-Session-ID: session1" http://localhost:8080/v1/chat/completions \
-  -d '{"model":"llama-model","messages":[{"role":"user","content":"Hello"}]}' &
-
-curl -H "X-Session-ID: session2" http://localhost:8080/v1/chat/completions \
-  -d '{"model":"llama-model","messages":[{"role":"user","content":"Hi"}]}' &
-
-wait
-```
-
-### Using Python
-
-```python
-import concurrent.futures
-from openai import OpenAI
-
-client = OpenAI(base_url="http://localhost:8080/v1", api_key="not-needed")
-
-def make_request(session_id, message):
-    response = client.chat.completions.create(
-        model="llama-model",
-        extra_headers={"X-Session-ID": session_id},
-        messages=[{"role": "user", "content": message}]
-    )
-    return f"{session_id}: {response.choices[0].message.content}"
-
-# Test concurrent requests to different sessions
-with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-    futures = [
-        executor.submit(make_request, f"session{i}", f"Hello {i}")
-        for i in range(5)
-    ]
-    
-    for future in concurrent.futures.as_completed(futures):
-        print(future.result())
-```
-
-## Performance Characteristics
-
-- **Throughput**: Multiple sessions can generate responses simultaneously
-- **Latency**: Single-session latency unchanged; multi-session requests don't block each other
-- **Resource Usage**: Lock overhead is minimal (microseconds for lock acquisition)
-- **Scalability**: Scales with the number of concurrent sessions up to hardware limits
+- **Max Concurrency** (Settings) controls the size of the in-memory request
+  queue. Values > 1 are valid; they queue requests without causing errors.
+- The default value is suitable for most use cases.
 
 ## Troubleshooting
 
-### Issue: Requests seem to queue even with different session IDs
+### Issue: `FAILED_PRECONDITION: A session already exists`
 
-**Solution**: Verify that session IDs are actually different. The session ID can come from:
-- `conversation_id` field (highest priority)
-- `user` field
-- `session_id` field
-- `X-Session-ID` header
-- "default" (lowest priority)
+This was the bug fixed by this change. If it reappears, verify that:
+
+1. You are running the latest version of the app.
+2. No other code path calls `Engine.createConversation()` outside the
+   `inferenceMutex` lock.
+
+### Issue: Requests time out under high concurrency
+
+**Cause**: The LiteRT engine processes one request at a time, so response time
+scales linearly with queue depth.
+
+**Solution**: Lower *Max Concurrency* in Settings to shed load early (returning
+HTTP 503) rather than letting requests pile up and time out.
 
 ### Issue: Deadlock concerns
 
 **Solution**: Deadlocks are not possible with this implementation because:
-- Each request acquires at most one lock
-- No nested lock acquisition
-- All locks are automatically released via `withLock`
-
-## Future Enhancements
-
-Potential improvements for future versions:
-
-1. **Lock timeout**: Add timeout to prevent indefinite waiting
-2. **Request queue limits**: Limit concurrent requests per session
-3. **Metrics**: Track lock contention and waiting times
-4. **Priority scheduling**: Allow high-priority requests to jump the queue
+- Each request acquires at most one lock (`inferenceMutex`).
+- No nested lock acquisition occurs.
+- The lock is always released in a `finally` block.

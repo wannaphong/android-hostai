@@ -65,12 +65,17 @@ class LlamaModel(
     @Volatile private var engine: Engine? = null
     private val scope = CoroutineScope(Dispatchers.IO)
 
-    // Global Mutex to serialise Engine.createConversation() calls.
-    // The LiteRT engine may not safely support concurrent conversation creation.
-    private val engineCreationLock = Mutex()
+    // Global Mutex to serialise the entire conversation lifecycle.
+    // LiteRT supports only one active session at a time: a second
+    // createConversation() call while a session is open throws
+    // FAILED_PRECONDITION.  This mutex is held from createConversation()
+    // until the conversation is closed, ensuring only one request uses
+    // the engine at a time even when concurrency > 1 is configured.
+    private val inferenceMutex = Mutex()
 
     // Read/Write lock to guard the engine lifecycle.
-    // generate*() methods acquire the read lock so they can run concurrently.
+    // generate*() methods acquire the read lock (and inferenceMutex for
+    // conversation serialisation).
     // close() acquires the write lock, which blocks until every in-flight
     // native sendMessage() call has finished – preventing a native crash where
     // the engine is freed while it is still executing inference.
@@ -277,34 +282,36 @@ class LlamaModel(
      * Create a new conversation for a single request.
      * A fresh conversation is created for every request and closed after use,
      * preventing stale state from causing failures on subsequent requests.
+     *
+     * **Must be called while [inferenceMutex] is held** – the LiteRT engine
+     * only supports one live session at a time.
+     *
      * @param config Sampler configuration for the conversation
      * @return The conversation instance, or null if creation fails
      */
-    private suspend fun createConversation(config: GenerationConfig): Conversation? {
+    private fun createConversation(config: GenerationConfig): Conversation? {
         // Log extra context if provided (for debugging/future support)
         if (config.extraContext?.isNotEmpty() == true) {
             LogManager.d(TAG, "Extra context provided: ${config.extraContext}")
         }
 
         return try {
-            engineCreationLock.mutexWithLock {
-                val currentEngine = engine
-                    ?: throw IllegalStateException("Engine is not initialized")
+            val currentEngine = engine
+                ?: throw IllegalStateException("Engine is not initialized")
 
-                val samplerConfig = SamplerConfig(
-                    topK = config.topK,
-                    topP = config.topP,
-                    temperature = config.temperature
-                )
+            val samplerConfig = SamplerConfig(
+                topK = config.topK,
+                topP = config.topP,
+                temperature = config.temperature
+            )
 
-                val conversationConfig = ConversationConfig(
-                    systemInstruction = null,
-                    initialMessages = emptyList(),
-                    samplerConfig = samplerConfig
-                )
+            val conversationConfig = ConversationConfig(
+                systemInstruction = null,
+                initialMessages = emptyList(),
+                samplerConfig = samplerConfig
+            )
 
-                currentEngine.createConversation(conversationConfig)
-            }
+            currentEngine.createConversation(conversationConfig)
         } catch (e: Exception) {
             LogManager.e(TAG, "Failed to create conversation: ${e.message}")
             null
@@ -338,6 +345,8 @@ class LlamaModel(
         // with the suspend world. Javalin handlers run on dedicated IO threads so blocking is acceptable.
         // The read lock prevents the engine from being closed (write lock in close()) while
         // sendMessage() is executing in native code.
+        // inferenceMutex is held for the full conversation lifetime so that the next request
+        // cannot call createConversation() before this one has called conversation.close().
         return engineLifecycleLock.read {
             // Re-check inside the lock: close() sets isLoaded = false while holding the write
             // lock, so if we reach here after close() completed, we see the updated value.
@@ -345,29 +354,31 @@ class LlamaModel(
                 return@read "Error: Model not loaded. Please load a model first."
             }
             runBlocking {
-                var conversation: Conversation? = null
-                try {
-                    conversation = createConversation(config)
+                inferenceMutex.mutexWithLock {
+                    var conversation: Conversation? = null
+                    try {
+                        conversation = createConversation(config)
 
-                    if (conversation == null) {
-                        val errorMsg = "Error: Failed to create conversation"
-                        LogManager.e(TAG, errorMsg)
-                        return@runBlocking errorMsg
-                    }
+                        if (conversation == null) {
+                            val errorMsg = "Error: Failed to create conversation"
+                            LogManager.e(TAG, errorMsg)
+                            return@mutexWithLock errorMsg
+                        }
 
-                    // Send message and get response synchronously
-                    val userMessage = Message.user(prompt)
-                    val response = conversation.sendMessage(userMessage)
-                    val result = response.toString()
-                    LogManager.i(TAG, "Generation completed successfully (length: ${result.length})")
-                    result
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to generate response", e)
-                    LogManager.e(TAG, "Failed to generate response: ${e.message}", e)
-                    "Error: ${e.message}"
-                } finally {
-                    try { conversation?.close() } catch (e: Exception) {
-                        LogManager.w(TAG, "Error closing conversation: ${e.message}")
+                        // Send message and get response synchronously
+                        val userMessage = Message.user(prompt)
+                        val response = conversation.sendMessage(userMessage)
+                        val result = response.toString()
+                        LogManager.i(TAG, "Generation completed successfully (length: ${result.length})")
+                        result
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to generate response", e)
+                        LogManager.e(TAG, "Failed to generate response: ${e.message}", e)
+                        "Error: ${e.message}"
+                    } finally {
+                        try { conversation?.close() } catch (e: Exception) {
+                            LogManager.w(TAG, "Error closing conversation: ${e.message}")
+                        }
                     }
                 }
             }
@@ -403,29 +414,31 @@ class LlamaModel(
                 return@read "Error: Model not loaded. Please load a model first."
             }
             runBlocking {
-                var conversation: Conversation? = null
-                try {
-                    conversation = createConversation(config)
+                inferenceMutex.mutexWithLock {
+                    var conversation: Conversation? = null
+                    try {
+                        conversation = createConversation(config)
 
-                    if (conversation == null) {
-                        val errorMsg = "Error: Failed to create conversation"
-                        LogManager.e(TAG, errorMsg)
-                        return@runBlocking errorMsg
-                    }
+                        if (conversation == null) {
+                            val errorMsg = "Error: Failed to create conversation"
+                            LogManager.e(TAG, errorMsg)
+                            return@mutexWithLock errorMsg
+                        }
 
-                    // Send message with multimodal contents and get response synchronously
-                    val userMessage = Message.user(Contents.of(contents))
-                    val response = conversation.sendMessage(userMessage)
-                    val result = response.toString()
-                    LogManager.i(TAG, "Multimodal generation completed successfully (length: ${result.length})")
-                    result
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to generate multimodal response", e)
-                    LogManager.e(TAG, "Failed to generate multimodal response: ${e.message}", e)
-                    "Error: ${e.message}"
-                } finally {
-                    try { conversation?.close() } catch (e: Exception) {
-                        LogManager.w(TAG, "Error closing conversation: ${e.message}")
+                        // Send message with multimodal contents and get response synchronously
+                        val userMessage = Message.user(Contents.of(contents))
+                        val response = conversation.sendMessage(userMessage)
+                        val result = response.toString()
+                        LogManager.i(TAG, "Multimodal generation completed successfully (length: ${result.length})")
+                        result
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to generate multimodal response", e)
+                        LogManager.e(TAG, "Failed to generate multimodal response: ${e.message}", e)
+                        "Error: ${e.message}"
+                    } finally {
+                        try { conversation?.close() } catch (e: Exception) {
+                            LogManager.w(TAG, "Error closing conversation: ${e.message}")
+                        }
                     }
                 }
             }
@@ -475,78 +488,80 @@ class LlamaModel(
         }
 
         return scope.launch {
-            var conversation: Conversation? = null
-            try {
-                conversation = createConversation(config)
+            inferenceMutex.mutexWithLock {
+                var conversation: Conversation? = null
+                try {
+                    conversation = createConversation(config)
 
-                if (conversation == null) {
-                    LogManager.e(TAG, "Failed to create conversation")
-                    onToken("Error: Failed to create conversation")
-                    return@launch
-                }
-
-                // Use suspendCancellableCoroutine to bridge the async callback with coroutines.
-                suspendCancellableCoroutine<Unit> { continuation ->
-                    val resumed = AtomicBoolean(false)
-                    val streamingCompleted = CompletableDeferred<Unit>()
-
-                    val callback = object : MessageCallback {
-                        override fun onMessage(message: Message) {
-                            val fullText = message.toString()
-                            scope.launch {
-                                try {
-                                    val parts = fullText.split(" ")
-                                    for ((index, part) in parts.withIndex()) {
-                                        if (part.isNotEmpty()) {
-                                            onToken(part)
-                                            delay(TOKEN_EMISSION_DELAY_MS)
-                                        }
-                                        if (index < parts.size - 1) {
-                                            onToken(" ")
-                                            delay(TOKEN_EMISSION_DELAY_MS)
-                                        }
-                                    }
-                                } catch (e: Exception) {
-                                    LogManager.e(TAG, "Error during chunked streaming", e)
-                                } finally {
-                                    streamingCompleted.complete(Unit)
-                                }
-                            }
-                        }
-
-                        override fun onDone() {
-                            LogManager.i(TAG, "Streaming completed")
-                            scope.launch {
-                                if (!streamingCompleted.isCompleted) {
-                                    streamingCompleted.complete(Unit)
-                                }
-                                streamingCompleted.await()
-                                if (resumed.compareAndSet(false, true)) {
-                                    continuation.resume(Unit)
-                                }
-                            }
-                        }
-
-                        override fun onError(throwable: Throwable) {
-                            Log.e(TAG, "Streaming error", throwable)
-                            LogManager.e(TAG, "Streaming error: ${throwable.message}", throwable)
-                            streamingCompleted.complete(Unit)
-                            if (resumed.compareAndSet(false, true)) {
-                                continuation.resumeWithException(throwable)
-                            }
-                        }
+                    if (conversation == null) {
+                        LogManager.e(TAG, "Failed to create conversation")
+                        onToken("Error: Failed to create conversation")
+                        return@mutexWithLock
                     }
 
-                    val userMessage = Message.user(prompt)
-                    conversation.sendMessageAsync(userMessage, callback)
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Streaming failed", e)
-                LogManager.e(TAG, "Streaming failed: ${e.message}", e)
-                onToken("Error: ${e.message}")
-            } finally {
-                try { conversation?.close() } catch (e: Exception) {
-                    LogManager.w(TAG, "Error closing conversation: ${e.message}")
+                    // Use suspendCancellableCoroutine to bridge the async callback with coroutines.
+                    suspendCancellableCoroutine<Unit> { continuation ->
+                        val resumed = AtomicBoolean(false)
+                        val streamingCompleted = CompletableDeferred<Unit>()
+
+                        val callback = object : MessageCallback {
+                            override fun onMessage(message: Message) {
+                                val fullText = message.toString()
+                                scope.launch {
+                                    try {
+                                        val parts = fullText.split(" ")
+                                        for ((index, part) in parts.withIndex()) {
+                                            if (part.isNotEmpty()) {
+                                                onToken(part)
+                                                delay(TOKEN_EMISSION_DELAY_MS)
+                                            }
+                                            if (index < parts.size - 1) {
+                                                onToken(" ")
+                                                delay(TOKEN_EMISSION_DELAY_MS)
+                                            }
+                                        }
+                                    } catch (e: Exception) {
+                                        LogManager.e(TAG, "Error during chunked streaming", e)
+                                    } finally {
+                                        streamingCompleted.complete(Unit)
+                                    }
+                                }
+                            }
+
+                            override fun onDone() {
+                                LogManager.i(TAG, "Streaming completed")
+                                scope.launch {
+                                    if (!streamingCompleted.isCompleted) {
+                                        streamingCompleted.complete(Unit)
+                                    }
+                                    streamingCompleted.await()
+                                    if (resumed.compareAndSet(false, true)) {
+                                        continuation.resume(Unit)
+                                    }
+                                }
+                            }
+
+                            override fun onError(throwable: Throwable) {
+                                Log.e(TAG, "Streaming error", throwable)
+                                LogManager.e(TAG, "Streaming error: ${throwable.message}", throwable)
+                                streamingCompleted.complete(Unit)
+                                if (resumed.compareAndSet(false, true)) {
+                                    continuation.resumeWithException(throwable)
+                                }
+                            }
+                        }
+
+                        val userMessage = Message.user(prompt)
+                        conversation.sendMessageAsync(userMessage, callback)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Streaming failed", e)
+                    LogManager.e(TAG, "Streaming failed: ${e.message}", e)
+                    onToken("Error: ${e.message}")
+                } finally {
+                    try { conversation?.close() } catch (e: Exception) {
+                        LogManager.w(TAG, "Error closing conversation: ${e.message}")
+                    }
                 }
             }
         }
@@ -586,77 +601,79 @@ class LlamaModel(
         }
 
         return scope.launch {
-            var conversation: Conversation? = null
-            try {
-                conversation = createConversation(config)
+            inferenceMutex.mutexWithLock {
+                var conversation: Conversation? = null
+                try {
+                    conversation = createConversation(config)
 
-                if (conversation == null) {
-                    LogManager.e(TAG, "Failed to create conversation")
-                    onToken("Error: Failed to create conversation")
-                    return@launch
-                }
-
-                suspendCancellableCoroutine<Unit> { continuation ->
-                    val resumed = AtomicBoolean(false)
-                    val streamingCompleted = CompletableDeferred<Unit>()
-
-                    val callback = object : MessageCallback {
-                        override fun onMessage(message: Message) {
-                            val fullText = message.toString()
-                            scope.launch {
-                                try {
-                                    val parts = fullText.split(" ")
-                                    for ((index, part) in parts.withIndex()) {
-                                        if (part.isNotEmpty()) {
-                                            onToken(part)
-                                            delay(TOKEN_EMISSION_DELAY_MS)
-                                        }
-                                        if (index < parts.size - 1) {
-                                            onToken(" ")
-                                            delay(TOKEN_EMISSION_DELAY_MS)
-                                        }
-                                    }
-                                } catch (e: Exception) {
-                                    LogManager.e(TAG, "Error during chunked streaming", e)
-                                } finally {
-                                    streamingCompleted.complete(Unit)
-                                }
-                            }
-                        }
-
-                        override fun onDone() {
-                            LogManager.i(TAG, "Multimodal streaming completed")
-                            scope.launch {
-                                if (!streamingCompleted.isCompleted) {
-                                    streamingCompleted.complete(Unit)
-                                }
-                                streamingCompleted.await()
-                                if (resumed.compareAndSet(false, true)) {
-                                    continuation.resume(Unit)
-                                }
-                            }
-                        }
-
-                        override fun onError(throwable: Throwable) {
-                            Log.e(TAG, "Multimodal streaming error", throwable)
-                            LogManager.e(TAG, "Multimodal streaming error: ${throwable.message}", throwable)
-                            streamingCompleted.complete(Unit)
-                            if (resumed.compareAndSet(false, true)) {
-                                continuation.resumeWithException(throwable)
-                            }
-                        }
+                    if (conversation == null) {
+                        LogManager.e(TAG, "Failed to create conversation")
+                        onToken("Error: Failed to create conversation")
+                        return@mutexWithLock
                     }
 
-                    val userMessage = Message.user(Contents.of(contents))
-                    conversation.sendMessageAsync(userMessage, callback)
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Multimodal streaming failed", e)
-                LogManager.e(TAG, "Multimodal streaming failed: ${e.message}", e)
-                onToken("Error: ${e.message}")
-            } finally {
-                try { conversation?.close() } catch (e: Exception) {
-                    LogManager.w(TAG, "Error closing conversation: ${e.message}")
+                    suspendCancellableCoroutine<Unit> { continuation ->
+                        val resumed = AtomicBoolean(false)
+                        val streamingCompleted = CompletableDeferred<Unit>()
+
+                        val callback = object : MessageCallback {
+                            override fun onMessage(message: Message) {
+                                val fullText = message.toString()
+                                scope.launch {
+                                    try {
+                                        val parts = fullText.split(" ")
+                                        for ((index, part) in parts.withIndex()) {
+                                            if (part.isNotEmpty()) {
+                                                onToken(part)
+                                                delay(TOKEN_EMISSION_DELAY_MS)
+                                            }
+                                            if (index < parts.size - 1) {
+                                                onToken(" ")
+                                                delay(TOKEN_EMISSION_DELAY_MS)
+                                            }
+                                        }
+                                    } catch (e: Exception) {
+                                        LogManager.e(TAG, "Error during chunked streaming", e)
+                                    } finally {
+                                        streamingCompleted.complete(Unit)
+                                    }
+                                }
+                            }
+
+                            override fun onDone() {
+                                LogManager.i(TAG, "Multimodal streaming completed")
+                                scope.launch {
+                                    if (!streamingCompleted.isCompleted) {
+                                        streamingCompleted.complete(Unit)
+                                    }
+                                    streamingCompleted.await()
+                                    if (resumed.compareAndSet(false, true)) {
+                                        continuation.resume(Unit)
+                                    }
+                                }
+                            }
+
+                            override fun onError(throwable: Throwable) {
+                                Log.e(TAG, "Multimodal streaming error", throwable)
+                                LogManager.e(TAG, "Multimodal streaming error: ${throwable.message}", throwable)
+                                streamingCompleted.complete(Unit)
+                                if (resumed.compareAndSet(false, true)) {
+                                    continuation.resumeWithException(throwable)
+                                }
+                            }
+                        }
+
+                        val userMessage = Message.user(Contents.of(contents))
+                        conversation.sendMessageAsync(userMessage, callback)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Multimodal streaming failed", e)
+                    LogManager.e(TAG, "Multimodal streaming failed: ${e.message}", e)
+                    onToken("Error: ${e.message}")
+                } finally {
+                    try { conversation?.close() } catch (e: Exception) {
+                        LogManager.w(TAG, "Error closing conversation: ${e.message}")
+                    }
                 }
             }
         }
