@@ -11,8 +11,8 @@ android {
         applicationId = "com.wannaphong.hostai"
         minSdk = 26
         targetSdk = 35
-        versionCode = 16
-        versionName = "1.1.5"
+        versionCode = 17
+        versionName = "1.1.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -51,7 +51,7 @@ configurations.all {
 dependencies {
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
-    implementation("com.google.android.material:material:1.11.0")
+    implementation("com.google.android.material:material:1.10.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     
     // Javalin for HTTP server with reliable streaming support
@@ -66,8 +66,8 @@ dependencies {
     // Coroutines for async operations
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     
-    // LiteRT for LLM inference (0.10.1 adds Gemma 4 support)
-    implementation("com.google.ai.edge.litertlm:litertlm-android:0.10.0")
+    // LiteRT for LLM inference (0.10.1 adds Gemma 4 support with improved performance)
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.10.1")
     
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
