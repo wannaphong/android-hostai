@@ -12,6 +12,11 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 /**
  * Foreground service that runs the OpenAI-compatible API server.
@@ -21,8 +26,12 @@ class ApiServerService : Service() {
     private val binder = LocalBinder()
     private var apiServer: OpenAIApiServer? = null
     private var model: LlamaModel? = null
-    private var isRunning = false
+    @Volatile private var isRunning = false
     private var currentPort: Int = DEFAULT_PORT
+
+    // Scope for background operations (model loading, server startup).
+    // Cancelled in onDestroy() so any in-flight coroutines are cleaned up.
+    private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     
     companion object {
         private const val TAG = "ApiServerService"
@@ -80,6 +89,19 @@ class ApiServerService : Service() {
         }
     }
     
+    /**
+     * Initiates server startup and returns immediately.
+     *
+     * The foreground service is promoted synchronously (required within 5 s on
+     * Android O+).  All heavy work – Jetty startup and model loading – runs on
+     * a background [Dispatchers.IO] coroutine so the main thread is never
+     * blocked.  Callers must NOT rely on the return value to determine whether
+     * the HTTP server is accepting connections; use [isServerRunning] for that.
+     *
+     * @return `false` only if the foreground-service promotion fails (the only
+     *         synchronous failure mode).  `true` means the service is alive and
+     *         startup is in progress.
+     */
     fun startServer(port: Int = DEFAULT_PORT, modelPath: String = "mock-model"): Boolean {
         if (isRunning) {
             LogManager.w(TAG, "Server already running")
@@ -102,43 +124,55 @@ class ApiServerService : Service() {
             LogManager.e(TAG, "Failed to start foreground service", e)
             return false
         }
-        
-        // Now we can safely do heavy operations like model loading
-        // If these fail, the service will still be running in foreground
-        return try {
-            // Initialize model with ContentResolver and Context
-            LogManager.i(TAG, "Initializing model...")
-            val llamaModel = LlamaModel(contentResolver, applicationContext)
-            model = llamaModel
-            
-            // Load the model and check if it succeeded
-            val modelLoaded = llamaModel.loadModel(modelPath)
-            if (!modelLoaded) {
-                LogManager.e(TAG, "Failed to load model. Server will start but model won't be available.")
-                // We still start the server to allow health checks and troubleshooting
-            }
-            
-            // Start API server
-            LogManager.i(TAG, "Starting HTTP server...")
-            apiServer = OpenAIApiServer(port, llamaModel, this)
-            apiServer?.start()
-            isRunning = true
-            
-            LogManager.i(TAG, "API server started successfully")
-            
-            true
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to start server", e)
-            LogManager.e(TAG, "Failed to start server", e)
-            // Clean up foreground service if server failed to start
+
+        // Launch server startup and model loading in the background so that the
+        // main thread is never blocked.  Crucially the HTTP server is started
+        // BEFORE model loading begins so that the port is open right away and
+        // clients are not greeted with "connection refused" while the model loads.
+        serviceScope.launch {
             try {
-                stopForeground(true)
-            } catch (ex: Exception) {
-                LogManager.w(TAG, "Error stopping foreground service: ${ex.message}")
+                // Create the LlamaModel wrapper (lightweight – no I/O yet)
+                LogManager.i(TAG, "Initializing model...")
+                val llamaModel = LlamaModel(contentResolver, applicationContext)
+                model = llamaModel
+
+                // Start the HTTP server IMMEDIATELY – before model loading – so
+                // browsers and API clients can reach the server without delay.
+                LogManager.i(TAG, "Starting HTTP server...")
+                val server = OpenAIApiServer(port, llamaModel, this@ApiServerService)
+                apiServer = server
+                server.start()
+                isRunning = true
+                LogManager.i(TAG, "API server started successfully")
+
+                // Now load the model in the background.  Non-inference endpoints
+                // (/health, /, /chat) respond immediately; inference endpoints
+                // will return an appropriate error until the model is ready.
+                LogManager.i(TAG, "Loading model: $modelPath")
+                val modelLoaded = llamaModel.loadModel(modelPath)
+                if (!modelLoaded) {
+                    LogManager.e(TAG, "Failed to load model. Server running but model unavailable.")
+                } else {
+                    LogManager.i(TAG, "Model loaded successfully")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to start server", e)
+                LogManager.e(TAG, "Failed to start server", e)
+                // Clean up foreground service if server failed to start
+                try {
+                    stopForeground(true)
+                } catch (ex: Exception) {
+                    LogManager.w(TAG, "Error stopping foreground service: ${ex.message}")
+                }
+                isRunning = false
             }
-            isRunning = false
-            false
         }
+
+        // The foreground service is running.  The HTTP server and model loading
+        // are in progress on the background coroutine.  Return true to indicate
+        // the foreground service started successfully; poll isServerRunning() to
+        // determine when the HTTP server is ready to accept connections.
+        return true
     }
     
     fun stopServer() {
@@ -196,5 +230,6 @@ class ApiServerService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         stopServer()
+        serviceScope.cancel()
     }
 }

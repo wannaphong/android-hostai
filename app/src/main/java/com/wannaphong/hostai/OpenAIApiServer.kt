@@ -10,6 +10,7 @@ import com.google.gson.reflect.TypeToken
 import io.javalin.Javalin
 import io.javalin.http.Context as JavalinContext
 import kotlinx.coroutines.*
+import org.eclipse.jetty.util.thread.QueuedThreadPool
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Semaphore
@@ -70,6 +71,13 @@ class OpenAIApiServer(
         private const val TAG = "OpenAIApiServer"
         // Maximum request body size (10 MB) to prevent memory exhaustion attacks
         private const val MAX_REQUEST_BODY_SIZE = 10 * 1024 * 1024
+
+        // Jetty thread-pool tuning: keep a small number of threads warm so that
+        // the very first request (and requests after a quiet period) do not incur
+        // thread-creation latency on Android.
+        private const val JETTY_MIN_THREADS = 4
+        private const val JETTY_MAX_THREADS = 20
+        private const val JETTY_IDLE_TIMEOUT_MS = 60_000
     }
     
     fun start() {
@@ -79,12 +87,21 @@ class OpenAIApiServer(
                 .coerceAtLeast(1)
             requestSemaphore = Semaphore(maxConcurrency, true)
             LogManager.i(TAG, "Max concurrency set to $maxConcurrency")
+
+            // Pre-warm a small pool of Jetty worker threads so that the first
+            // request (and requests after idle periods) do not pay the cost of
+            // thread creation on Android.  This is the primary fix for the
+            // 5-10 second latency seen when the server appears "slow to start".
+            val threadPool = QueuedThreadPool(JETTY_MAX_THREADS, JETTY_MIN_THREADS, JETTY_IDLE_TIMEOUT_MS)
+            threadPool.isDaemon = true
+            threadPool.name = "hostai-jetty"
             
             app = Javalin.create { config ->
                 // Configure Javalin
                 config.http.maxRequestSize = MAX_REQUEST_BODY_SIZE.toLong()
                 config.showJavalinBanner = false
                 config.http.asyncTimeout = 300000L // 5 minutes for streaming
+                config.jetty.threadPool = threadPool
             }.apply {
                 // Health check
                 get("/health") { ctx -> handleHealth(ctx) }
