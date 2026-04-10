@@ -67,7 +67,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     
     // LiteRT for LLM inference (0.10.1 adds Gemma 4 support with improved performance)
-    implementation("com.google.ai.edge.litertlm:litertlm-android:0.10.1")
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.10.0")
     
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
