@@ -719,11 +719,17 @@ class OpenAIApiServer(
                 )
                 val responseJson = gson.toJson(fullResponse)
                 logRequestIfEnabled(ctx, "/v1/chat/completions", bodyText, responseJson)
+            } catch (e: IOException) {
+                // Client disconnected before the final chunk could be sent — this is normal.
+                LogManager.d(TAG, "Client disconnected before final chat streaming chunk: ${e.message}")
             } catch (e: IllegalStateException) {
                 // Handle Jetty output stream state errors gracefully
                 // This can happen if the client disconnected or the stream is already closed
                 LogManager.d(TAG, "Output stream no longer writable (client may have disconnected): ${e.message}")
             }
+        } catch (e: IOException) {
+            // Client disconnected during chat streaming — not an application error.
+            LogManager.d(TAG, "Client disconnected during chat streaming: ${e.message}")
         } catch (e: Exception) {
             LogManager.e(TAG, "Error in chat streaming", e)
         }
@@ -956,11 +962,17 @@ class OpenAIApiServer(
                 )
                 val responseJson = gson.toJson(fullResponse)
                 logRequestIfEnabled(ctx, "/v1/completions", bodyText, responseJson)
+            } catch (e: IOException) {
+                // Client disconnected before the final chunk could be sent — this is normal.
+                LogManager.d(TAG, "Client disconnected before final completion streaming chunk: ${e.message}")
             } catch (e: IllegalStateException) {
                 // Handle Jetty output stream state errors gracefully
                 // This can happen if the client disconnected or the stream is already closed
                 LogManager.d(TAG, "Output stream no longer writable (client may have disconnected): ${e.message}")
             }
+        } catch (e: IOException) {
+            // Client disconnected during completion streaming — not an application error.
+            LogManager.d(TAG, "Client disconnected during completion streaming: ${e.message}")
         } catch (e: Exception) {
             LogManager.e(TAG, "Error in completion streaming", e)
         }
