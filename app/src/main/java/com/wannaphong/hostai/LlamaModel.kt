@@ -528,7 +528,16 @@ class LlamaModel(
                                 override fun onMessage(message: Message) {
                                     // Emit each token chunk directly as it arrives from the engine.
                                     // No buffering or artificial delays — let the native engine pace output.
-                                    onToken(message.toString())
+                                    // Wrap in try-catch: exceptions must never escape a JNI callback or
+                                    // they will crash the native engine / the Android process.
+                                    try {
+                                        onToken(message.toString())
+                                    } catch (e: Exception) {
+                                        LogManager.w(TAG, "Token callback error (client may have disconnected): ${e.message}")
+                                        if (resumed.compareAndSet(false, true)) {
+                                            continuation.resumeWithException(e)
+                                        }
+                                    }
                                 }
 
                                 override fun onDone() {
@@ -553,7 +562,9 @@ class LlamaModel(
                     } catch (e: Exception) {
                         Log.e(TAG, "Streaming failed", e)
                         LogManager.e(TAG, "Streaming failed: ${e.message}", e)
-                        onToken("Error: ${e.message}")
+                        try { onToken("Error: ${e.message}") } catch (ignored: Exception) {
+                            // Client may have already disconnected; nothing to do.
+                        }
                     } finally {
                         try { conversation?.close() } catch (e: Exception) {
                             LogManager.w(TAG, "Error closing conversation: ${e.message}")
@@ -620,7 +631,16 @@ class LlamaModel(
                             val callback = object : MessageCallback {
                                 override fun onMessage(message: Message) {
                                     // Emit each token chunk directly as it arrives from the engine.
-                                    onToken(message.toString())
+                                    // Wrap in try-catch: exceptions must never escape a JNI callback or
+                                    // they will crash the native engine / the Android process.
+                                    try {
+                                        onToken(message.toString())
+                                    } catch (e: Exception) {
+                                        LogManager.w(TAG, "Multimodal token callback error (client may have disconnected): ${e.message}")
+                                        if (resumed.compareAndSet(false, true)) {
+                                            continuation.resumeWithException(e)
+                                        }
+                                    }
                                 }
 
                                 override fun onDone() {
@@ -645,7 +665,9 @@ class LlamaModel(
                     } catch (e: Exception) {
                         Log.e(TAG, "Multimodal streaming failed", e)
                         LogManager.e(TAG, "Multimodal streaming failed: ${e.message}", e)
-                        onToken("Error: ${e.message}")
+                        try { onToken("Error: ${e.message}") } catch (ignored: Exception) {
+                            // Client may have already disconnected; nothing to do.
+                        }
                     } finally {
                         try { conversation?.close() } catch (e: Exception) {
                             LogManager.w(TAG, "Error closing conversation: ${e.message}")
