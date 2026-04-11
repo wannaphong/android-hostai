@@ -14,6 +14,9 @@ through a single `inferenceMutex`:
   the lock.
 - Only after the conversation is fully closed is the lock released and the next
   queued request allowed to proceed.
+- `close()` also acquires `inferenceMutex` before freeing the native engine,
+  guaranteeing that no in-flight inference is running when the engine is
+  destroyed.
 
 This guarantees that `Engine.createConversation()` is never called while another
 session is still open, eliminating the
@@ -30,16 +33,53 @@ private val inferenceMutex = Mutex()
 ```
 
 The mutex is held for the **complete** conversation lifetime in every
-`generate*()` method:
+`generate*()` method, and is also acquired by `close()` before the engine is
+destroyed:
 
 ```kotlin
 // inferenceMutex is imported as mutexWithLock (see LlamaModel.kt imports)
 inferenceMutex.mutexWithLock {
+    if (!isLoaded) return@mutexWithLock "Error"
     val conversation = createConversation(config) ?: return@mutexWithLock "Error"
     try {
         // ... send message / stream tokens ...
     } finally {
         conversation.close()   // lock released only after close()
+    }
+}
+```
+
+### Why ReentrantReadWriteLock is NOT used for streaming
+
+An earlier implementation wrapped streaming coroutines with
+`engineLifecycleLock.read {}` (a `ReentrantReadWriteLock`) to prevent
+`close()` from freeing the engine while `sendMessageAsync` callbacks were still
+firing.  This caused a subtle but critical bug under concurrent load:
+
+`ReentrantReadWriteLock.ReadLock` has **thread affinity** – `unlock()` must be
+called from the same thread that called `lock()`.  Kotlin coroutines on
+`Dispatchers.IO` can resume on a **different** thread after each suspension
+point (`inferenceMutex.mutexWithLock` and `suspendCancellableCoroutine` are
+both suspension points).  When a second concurrent streaming request had to
+wait for `inferenceMutex`, it suspended and resumed on a different IO thread,
+causing `IllegalMonitorStateException` when the `read {}` block tried to
+unlock – silently failing every concurrent streaming request.
+
+`inferenceMutex` is a Kotlin coroutine `Mutex`, which is fully
+**coroutine-friendly**: its ownership is logical (coroutine-bound), not
+thread-bound, so thread switches between suspension points are safe.
+
+### Safe engine-close via inferenceMutex
+
+```kotlin
+// LlamaModel.close()
+isLoaded = false          // prevent new requests from entering inferenceMutex
+runBlocking {
+    inferenceMutex.mutexWithLock {
+        // At this point no inference is running.
+        scope.cancel()    // cancel any pending streaming jobs
+        engine?.close()   // safe: engine is not in use
+        engine = null
     }
 }
 ```
@@ -106,7 +146,8 @@ predictable queuing rather than random failures.
 
 ### Issue: `FAILED_PRECONDITION: A session already exists`
 
-This was the bug fixed by this change. If it reappears, verify that:
+This was the bug fixed by the `inferenceMutex` change. If it reappears, verify
+that:
 
 1. You are running the latest version of the app.
 2. No other code path calls `Engine.createConversation()` outside the
