@@ -100,6 +100,26 @@ the inference mutex in place this value mainly controls how many requests are
 held in memory while waiting for the engine – it no longer causes
 concurrent-session errors regardless of what value is chosen.
 
+### Early conversation close on client disconnect
+
+When a streaming client disconnects mid-response, the `onToken` callback throws
+an `IOException`.  The `MessageCallback.onMessage` handler catches this,
+immediately calls `conversation.close()` on the JNI callback thread, and then
+resumes the coroutine continuation with the exception.
+
+Closing the conversation from within `onMessage` sends a stop signal to the
+native engine right away.  Without this early close, the engine would continue
+generating tokens while `inferenceMutex` was still held (because the finally
+block that calls `close()` can only run once the coroutine is scheduled and
+dispatched, which may lag behind the JNI callbacks by many tokens).
+
+The `finally` block still contains a `conversation.close()` call as a safety
+net.  Calling `close()` on an already-closed `Conversation` is a no-op.
+
+Additionally, subsequent `onMessage` callbacks check `resumed.get()` and return
+immediately once the continuation has been resumed, avoiding redundant
+`IOException` attempts.
+
 ### Methods Protected
 
 All generation methods hold `inferenceMutex` for the full conversation lifetime:
@@ -153,7 +173,16 @@ that:
 2. No other code path calls `Engine.createConversation()` outside the
    `inferenceMutex` lock.
 
-### Issue: Requests time out under high concurrency
+### Issue: Second streaming request does not start until the first finishes fully
+
+**Cause (fixed)**: When a streaming client disconnects mid-response, the native
+engine continued generating tokens while `inferenceMutex` was still held.  The
+lock was not released until the stream ended naturally, so any concurrently
+queued request had to wait.
+
+**Fix**: The `onMessage` callback now closes the conversation immediately on
+client disconnect, sending a stop signal to the native engine without waiting
+for the coroutine finally block to run.
 
 **Cause**: The LiteRT engine processes one request at a time, so response time
 scales linearly with queue depth.
