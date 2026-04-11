@@ -26,9 +26,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock as mutexWithLock
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.locks.ReentrantReadWriteLock
-import kotlin.concurrent.read
-import kotlin.concurrent.write
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -69,15 +66,11 @@ class LlamaModel(
     // FAILED_PRECONDITION.  This mutex is held from createConversation()
     // until the conversation is closed, ensuring only one request uses
     // the engine at a time even when concurrency > 1 is configured.
+    //
+    // close() also acquires this mutex before freeing the native engine,
+    // guaranteeing that no in-flight inference (streaming or non-streaming)
+    // is running when the engine is destroyed.
     private val inferenceMutex = Mutex()
-
-    // Read/Write lock to guard the engine lifecycle.
-    // generate*() methods acquire the read lock (and inferenceMutex for
-    // conversation serialisation).
-    // close() acquires the write lock, which blocks until every in-flight
-    // native sendMessage() call has finished – preventing a native crash where
-    // the engine is freed while it is still executing inference.
-    private val engineLifecycleLock = ReentrantReadWriteLock()
 
     // Cache SettingsManager to avoid repeated instantiation
     private val settingsManager by lazy { SettingsManager(context) }
@@ -359,42 +352,40 @@ class LlamaModel(
 
         // runBlocking bridges this non-suspend function (called by the Javalin HTTP handler)
         // with the suspend world. Javalin handlers run on dedicated IO threads so blocking is acceptable.
-        // The read lock prevents the engine from being closed (write lock in close()) while
-        // sendMessage() is executing in native code.
         // inferenceMutex is held for the full conversation lifetime so that the next request
         // cannot call createConversation() before this one has called conversation.close().
-        return engineLifecycleLock.read {
-            // Re-check inside the lock: close() sets isLoaded = false while holding the write
-            // lock, so if we reach here after close() completed, we see the updated value.
-            if (!isLoaded) {
-                return@read "Error: Model not loaded. Please load a model first."
-            }
-            runBlocking {
-                inferenceMutex.mutexWithLock {
-                    var conversation: Conversation? = null
-                    try {
-                        conversation = createConversation(config)
+        // close() also acquires inferenceMutex before freeing the engine, so we are guaranteed
+        // that the engine is alive for the entire duration of this block.
+        return runBlocking {
+            inferenceMutex.mutexWithLock {
+                // Re-check inside the mutex: close() sets isLoaded = false before acquiring
+                // inferenceMutex, so this check detects a close() that raced ahead of us.
+                if (!isLoaded) {
+                    return@mutexWithLock "Error: Model not loaded. Please load a model first."
+                }
+                var conversation: Conversation? = null
+                try {
+                    conversation = createConversation(config)
 
-                        if (conversation == null) {
-                            val errorMsg = "Error: Failed to create conversation"
-                            LogManager.e(TAG, errorMsg)
-                            return@mutexWithLock errorMsg
-                        }
+                    if (conversation == null) {
+                        val errorMsg = "Error: Failed to create conversation"
+                        LogManager.e(TAG, errorMsg)
+                        return@mutexWithLock errorMsg
+                    }
 
-                        // Send message and get response synchronously
-                        val userMessage = Message.user(prompt)
-                        val response = conversation.sendMessage(userMessage)
-                        val result = response.toString()
-                        LogManager.i(TAG, "Generation completed successfully (length: ${result.length})")
-                        result
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Failed to generate response", e)
-                        LogManager.e(TAG, "Failed to generate response: ${e.message}", e)
-                        "Error: ${e.message}"
-                    } finally {
-                        try { conversation?.close() } catch (e: Exception) {
-                            LogManager.w(TAG, "Error closing conversation: ${e.message}")
-                        }
+                    // Send message and get response synchronously
+                    val userMessage = Message.user(prompt)
+                    val response = conversation.sendMessage(userMessage)
+                    val result = response.toString()
+                    LogManager.i(TAG, "Generation completed successfully (length: ${result.length})")
+                    result
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to generate response", e)
+                    LogManager.e(TAG, "Failed to generate response: ${e.message}", e)
+                    "Error: ${e.message}"
+                } finally {
+                    try { conversation?.close() } catch (e: Exception) {
+                        LogManager.w(TAG, "Error closing conversation: ${e.message}")
                     }
                 }
             }
@@ -423,38 +414,36 @@ class LlamaModel(
             return "This is a mock multimodal response from the model with ${contents.size} content parts."
         }
 
-        return engineLifecycleLock.read {
-            // Re-check inside the lock: close() sets isLoaded = false while holding the write
-            // lock, so if we reach here after close() completed, we see the updated value.
-            if (!isLoaded) {
-                return@read "Error: Model not loaded. Please load a model first."
-            }
-            runBlocking {
-                inferenceMutex.mutexWithLock {
-                    var conversation: Conversation? = null
-                    try {
-                        conversation = createConversation(config)
+        return runBlocking {
+            inferenceMutex.mutexWithLock {
+                // Re-check inside the mutex: close() sets isLoaded = false before acquiring
+                // inferenceMutex, so this check detects a close() that raced ahead of us.
+                if (!isLoaded) {
+                    return@mutexWithLock "Error: Model not loaded. Please load a model first."
+                }
+                var conversation: Conversation? = null
+                try {
+                    conversation = createConversation(config)
 
-                        if (conversation == null) {
-                            val errorMsg = "Error: Failed to create conversation"
-                            LogManager.e(TAG, errorMsg)
-                            return@mutexWithLock errorMsg
-                        }
+                    if (conversation == null) {
+                        val errorMsg = "Error: Failed to create conversation"
+                        LogManager.e(TAG, errorMsg)
+                        return@mutexWithLock errorMsg
+                    }
 
-                        // Send message with multimodal contents and get response synchronously
-                        val userMessage = Message.user(Contents.of(contents))
-                        val response = conversation.sendMessage(userMessage)
-                        val result = response.toString()
-                        LogManager.i(TAG, "Multimodal generation completed successfully (length: ${result.length})")
-                        result
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Failed to generate multimodal response", e)
-                        LogManager.e(TAG, "Failed to generate multimodal response: ${e.message}", e)
-                        "Error: ${e.message}"
-                    } finally {
-                        try { conversation?.close() } catch (e: Exception) {
-                            LogManager.w(TAG, "Error closing conversation: ${e.message}")
-                        }
+                    // Send message with multimodal contents and get response synchronously
+                    val userMessage = Message.user(Contents.of(contents))
+                    val response = conversation.sendMessage(userMessage)
+                    val result = response.toString()
+                    LogManager.i(TAG, "Multimodal generation completed successfully (length: ${result.length})")
+                    result
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to generate multimodal response", e)
+                    LogManager.e(TAG, "Failed to generate multimodal response: ${e.message}", e)
+                    "Error: ${e.message}"
+                } finally {
+                    try { conversation?.close() } catch (e: Exception) {
+                        LogManager.w(TAG, "Error closing conversation: ${e.message}")
                     }
                 }
             }
@@ -500,75 +489,84 @@ class LlamaModel(
         }
 
         return scope.launch {
-            // Hold the read lock for the entire streaming session so that close()
-            // (which takes the write lock) cannot free the native engine while
-            // sendMessageAsync callbacks are still firing.
-            engineLifecycleLock.read {
-                // Re-check inside the lock (same pattern as generate()).
+            // inferenceMutex serialises the full conversation lifetime so that
+            // createConversation() is never called while another session is open.
+            // close() also acquires this mutex before freeing the engine, so we are
+            // guaranteed the engine remains alive throughout sendMessageAsync.
+            //
+            // NOTE: engineLifecycleLock.read {} is intentionally NOT used here.
+            // ReentrantReadWriteLock has thread affinity: unlock() must be called from
+            // the thread that called lock().  Kotlin coroutines on Dispatchers.IO can
+            // resume on a different thread after each suspension point
+            // (inferenceMutex.mutexWithLock and suspendCancellableCoroutine both
+            // suspend), so holding a ReentrantReadWriteLock.readLock across those
+            // suspension points causes IllegalMonitorStateException and breaks
+            // multi-concurrency streaming.
+            inferenceMutex.mutexWithLock {
+                // Re-check inside the mutex: close() sets isLoaded = false before
+                // acquiring inferenceMutex, so this detects a close() that won the race.
                 if (!isLoaded) {
                     onToken("Error: Model not loaded. Please load a model first.")
-                    return@read
+                    return@mutexWithLock
                 }
-                inferenceMutex.mutexWithLock {
-                    var conversation: Conversation? = null
-                    try {
-                        conversation = createConversation(config)
+                var conversation: Conversation? = null
+                try {
+                    conversation = createConversation(config)
 
-                        if (conversation == null) {
-                            LogManager.e(TAG, "Failed to create conversation")
-                            onToken("Error: Failed to create conversation")
-                            return@mutexWithLock
-                        }
+                    if (conversation == null) {
+                        LogManager.e(TAG, "Failed to create conversation")
+                        onToken("Error: Failed to create conversation")
+                        return@mutexWithLock
+                    }
 
-                        // Use suspendCancellableCoroutine to bridge the async callback with coroutines.
-                        suspendCancellableCoroutine<Unit> { continuation ->
-                            val resumed = AtomicBoolean(false)
+                    // Use suspendCancellableCoroutine to bridge the async callback with coroutines.
+                    suspendCancellableCoroutine<Unit> { continuation ->
+                        val resumed = AtomicBoolean(false)
 
-                            val callback = object : MessageCallback {
-                                override fun onMessage(message: Message) {
-                                    // Emit each token chunk directly as it arrives from the engine.
-                                    // No buffering or artificial delays — let the native engine pace output.
-                                    // Wrap in try-catch: exceptions must never escape a JNI callback or
-                                    // they will crash the native engine / the Android process.
-                                    try {
-                                        onToken(message.toString())
-                                    } catch (e: Exception) {
-                                        LogManager.w(TAG, "Token callback error (client may have disconnected): ${e.message}")
-                                        if (resumed.compareAndSet(false, true)) {
-                                            continuation.resumeWithException(e)
-                                        }
-                                    }
-                                }
-
-                                override fun onDone() {
-                                    LogManager.i(TAG, "Streaming completed")
+                        val callback = object : MessageCallback {
+                            override fun onMessage(message: Message) {
+                                // Emit each token chunk directly as it arrives from the engine.
+                                // No buffering or artificial delays — let the native engine pace output.
+                                // Wrap in try-catch: exceptions must never escape a JNI callback or
+                                // they will crash the native engine / the Android process.
+                                try {
+                                    onToken(message.toString())
+                                } catch (e: Exception) {
+                                    LogManager.w(TAG, "Token callback error (client may have disconnected): ${e.message}")
                                     if (resumed.compareAndSet(false, true)) {
-                                        continuation.resume(Unit)
-                                    }
-                                }
-
-                                override fun onError(throwable: Throwable) {
-                                    Log.e(TAG, "Streaming error", throwable)
-                                    LogManager.e(TAG, "Streaming error: ${throwable.message}", throwable)
-                                    if (resumed.compareAndSet(false, true)) {
-                                        continuation.resumeWithException(throwable)
+                                        continuation.resumeWithException(e)
                                     }
                                 }
                             }
 
-                            val userMessage = Message.user(prompt)
-                            conversation.sendMessageAsync(userMessage, callback)
+                            override fun onDone() {
+                                LogManager.i(TAG, "Streaming completed")
+                                if (resumed.compareAndSet(false, true)) {
+                                    continuation.resume(Unit)
+                                }
+                            }
+
+                            override fun onError(throwable: Throwable) {
+                                Log.e(TAG, "Streaming error", throwable)
+                                LogManager.e(TAG, "Streaming error: ${throwable.message}", throwable)
+                                if (resumed.compareAndSet(false, true)) {
+                                    continuation.resumeWithException(throwable)
+                                }
+                            }
                         }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Streaming failed", e)
-                        LogManager.e(TAG, "Streaming failed: ${e.message}", e)
-                        try { onToken("Error: ${e.message}") } catch (ignored: Exception) {
-                            // Client may have already disconnected; nothing to do.
-                        }
-                    } finally {
-                        try { conversation?.close() } catch (e: Exception) {
-                            LogManager.w(TAG, "Error closing conversation: ${e.message}")
-                        }
+
+                        val userMessage = Message.user(prompt)
+                        conversation.sendMessageAsync(userMessage, callback)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Streaming failed", e)
+                    LogManager.e(TAG, "Streaming failed: ${e.message}", e)
+                    try { onToken("Error: ${e.message}") } catch (ignored: Exception) {
+                        // Client may have already disconnected; nothing to do.
+                    }
+                } finally {
+                    try { conversation?.close() } catch (e: Exception) {
+                        LogManager.w(TAG, "Error closing conversation: ${e.message}")
                     }
                 }
             }
@@ -605,73 +603,72 @@ class LlamaModel(
         }
 
         return scope.launch {
-            // Hold the read lock for the entire streaming session so that close()
-            // (which takes the write lock) cannot free the native engine while
-            // sendMessageAsync callbacks are still firing.
-            engineLifecycleLock.read {
-                // Re-check inside the lock (same pattern as generateWithContents()).
+            // Same approach as generateStream(): use inferenceMutex only.
+            // See generateStream() for the detailed explanation of why
+            // engineLifecycleLock.read {} must NOT be used in streaming coroutines.
+            inferenceMutex.mutexWithLock {
+                // Re-check inside the mutex: close() sets isLoaded = false before
+                // acquiring inferenceMutex, so this detects a close() that won the race.
                 if (!isLoaded) {
                     onToken("Error: Model not loaded. Please load a model first.")
-                    return@read
+                    return@mutexWithLock
                 }
-                inferenceMutex.mutexWithLock {
-                    var conversation: Conversation? = null
-                    try {
-                        conversation = createConversation(config)
+                var conversation: Conversation? = null
+                try {
+                    conversation = createConversation(config)
 
-                        if (conversation == null) {
-                            LogManager.e(TAG, "Failed to create conversation")
-                            onToken("Error: Failed to create conversation")
-                            return@mutexWithLock
-                        }
+                    if (conversation == null) {
+                        LogManager.e(TAG, "Failed to create conversation")
+                        onToken("Error: Failed to create conversation")
+                        return@mutexWithLock
+                    }
 
-                        suspendCancellableCoroutine<Unit> { continuation ->
-                            val resumed = AtomicBoolean(false)
+                    suspendCancellableCoroutine<Unit> { continuation ->
+                        val resumed = AtomicBoolean(false)
 
-                            val callback = object : MessageCallback {
-                                override fun onMessage(message: Message) {
-                                    // Emit each token chunk directly as it arrives from the engine.
-                                    // Wrap in try-catch: exceptions must never escape a JNI callback or
-                                    // they will crash the native engine / the Android process.
-                                    try {
-                                        onToken(message.toString())
-                                    } catch (e: Exception) {
-                                        LogManager.w(TAG, "Multimodal token callback error (client may have disconnected): ${e.message}")
-                                        if (resumed.compareAndSet(false, true)) {
-                                            continuation.resumeWithException(e)
-                                        }
-                                    }
-                                }
-
-                                override fun onDone() {
-                                    LogManager.i(TAG, "Multimodal streaming completed")
+                        val callback = object : MessageCallback {
+                            override fun onMessage(message: Message) {
+                                // Emit each token chunk directly as it arrives from the engine.
+                                // Wrap in try-catch: exceptions must never escape a JNI callback or
+                                // they will crash the native engine / the Android process.
+                                try {
+                                    onToken(message.toString())
+                                } catch (e: Exception) {
+                                    LogManager.w(TAG, "Multimodal token callback error (client may have disconnected): ${e.message}")
                                     if (resumed.compareAndSet(false, true)) {
-                                        continuation.resume(Unit)
-                                    }
-                                }
-
-                                override fun onError(throwable: Throwable) {
-                                    Log.e(TAG, "Multimodal streaming error", throwable)
-                                    LogManager.e(TAG, "Multimodal streaming error: ${throwable.message}", throwable)
-                                    if (resumed.compareAndSet(false, true)) {
-                                        continuation.resumeWithException(throwable)
+                                        continuation.resumeWithException(e)
                                     }
                                 }
                             }
 
-                            val userMessage = Message.user(Contents.of(contents))
-                            conversation.sendMessageAsync(userMessage, callback)
+                            override fun onDone() {
+                                LogManager.i(TAG, "Multimodal streaming completed")
+                                if (resumed.compareAndSet(false, true)) {
+                                    continuation.resume(Unit)
+                                }
+                            }
+
+                            override fun onError(throwable: Throwable) {
+                                Log.e(TAG, "Multimodal streaming error", throwable)
+                                LogManager.e(TAG, "Multimodal streaming error: ${throwable.message}", throwable)
+                                if (resumed.compareAndSet(false, true)) {
+                                    continuation.resumeWithException(throwable)
+                                }
+                            }
                         }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Multimodal streaming failed", e)
-                        LogManager.e(TAG, "Multimodal streaming failed: ${e.message}", e)
-                        try { onToken("Error: ${e.message}") } catch (ignored: Exception) {
-                            // Client may have already disconnected; nothing to do.
-                        }
-                    } finally {
-                        try { conversation?.close() } catch (e: Exception) {
-                            LogManager.w(TAG, "Error closing conversation: ${e.message}")
-                        }
+
+                        val userMessage = Message.user(Contents.of(contents))
+                        conversation.sendMessageAsync(userMessage, callback)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Multimodal streaming failed", e)
+                    LogManager.e(TAG, "Multimodal streaming failed: ${e.message}", e)
+                    try { onToken("Error: ${e.message}") } catch (ignored: Exception) {
+                        // Client may have already disconnected; nothing to do.
+                    }
+                } finally {
+                    try { conversation?.close() } catch (e: Exception) {
+                        LogManager.w(TAG, "Error closing conversation: ${e.message}")
                     }
                 }
             }
@@ -694,7 +691,7 @@ class LlamaModel(
 
     /**
      * Cleanup resources, optionally closing the engine.
-     * Must be called while holding engineLifecycleLock (write lock) when closeEngine is true.
+     * Must only be called while inferenceMutex is held when closeEngine is true.
      */
     private fun cleanup(closeEngine: Boolean = false) {
         try {
@@ -724,20 +721,24 @@ class LlamaModel(
      * Explicitly release native resources.
      * Call this when you're done with the model to free memory immediately.
      *
-     * Acquires the write lock which blocks until every in-flight generate() call
-     * (holding the read lock) has returned.  This prevents the engine from being
-     * freed while a native sendMessage() is still executing and causing a crash.
-     * isLoaded is set to false inside the write lock so that any thread that
-     * races through isModelLoaded() and then waits on the read lock will see
-     * the updated flag and bail out without touching a closed engine.
+     * Sets isLoaded = false first to prevent new requests from starting, then
+     * acquires inferenceMutex to wait for any active inference (streaming or
+     * non-streaming) to finish before closing the native engine.  This guarantees
+     * that engine?.close() is never called while sendMessage / sendMessageAsync is
+     * still executing in native code.
      */
     fun close() {
         LogManager.i(TAG, "Closing model and releasing resources")
-        // The write lock waits for all current read-lock holders (in-flight
-        // generate / generateWithContents calls) to complete before proceeding.
-        engineLifecycleLock.write {
-            isLoaded = false
-            cleanup(closeEngine = true)
+        // Signal to all generate*() / generateStream*() methods that the model is
+        // going away.  They re-check isLoaded inside inferenceMutex and will
+        // return an error instead of starting a new conversation.
+        isLoaded = false
+        // Acquire the inference mutex to wait for the currently active inference
+        // (if any) to complete and release the mutex before we destroy the engine.
+        runBlocking {
+            inferenceMutex.mutexWithLock {
+                cleanup(closeEngine = true)
+            }
         }
     }
 }
