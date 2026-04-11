@@ -10,6 +10,7 @@ import com.google.gson.reflect.TypeToken
 import io.javalin.Javalin
 import io.javalin.http.Context as JavalinContext
 import kotlinx.coroutines.*
+import org.eclipse.jetty.server.Server
 import org.eclipse.jetty.util.thread.QueuedThreadPool
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
@@ -101,7 +102,7 @@ class OpenAIApiServer(
                 config.http.maxRequestSize = MAX_REQUEST_BODY_SIZE.toLong()
                 config.showJavalinBanner = false
                 config.http.asyncTimeout = 300000L // 5 minutes for streaming
-                config.jetty.threadPool = threadPool
+                config.jetty.server { Server(threadPool) }
             }.apply {
                 // Health check
                 get("/health") { ctx -> handleHealth(ctx) }
