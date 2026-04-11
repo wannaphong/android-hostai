@@ -2,87 +2,91 @@
 
 ## Overview
 
-HostAI accepts multiple concurrent HTTP requests, but the underlying LiteRT
-inference engine supports **only one active conversation (session) at a time**.
-Because of this hardware/SDK constraint, all inference operations are serialised
-through a single `inferenceMutex`:
+HostAI supports truly parallel inference requests by maintaining a **pool of
+LiteRT Engine instances** – one per configured concurrent slot.  LiteRT's
+native engine constraint ("only one active conversation per Engine instance") is
+respected by giving each concurrent request its own dedicated Engine, so
+multiple requests run simultaneously with no serialisation:
 
 - Incoming requests are queued in FIFO order by the `requestSemaphore` in
   `OpenAIApiServer` (controlled by the *Max Concurrency* setting).
-- Each request then acquires `inferenceMutex` in `LlamaModel` before creating a
-  conversation, runs inference, and closes the conversation – all while holding
-  the lock.
-- Only after the conversation is fully closed is the lock released and the next
-  queued request allowed to proceed.
-- `close()` also acquires `inferenceMutex` before freeing the native engine,
-  guaranteeing that no in-flight inference is running when the engine is
-  destroyed.
-
-This guarantees that `Engine.createConversation()` is never called while another
-session is still open, eliminating the
-`FAILED_PRECONDITION: A session already exists` error that previously occurred
-when concurrency > 1.
+- Each request borrows one Engine from the pool in `LlamaModel`, creates a
+  conversation on that Engine, runs inference, closes the conversation, and
+  returns the Engine to the pool.
+- With *Max Concurrency = N*, exactly N Engine instances are loaded at model
+  load time, and N requests can execute fully in parallel.
+- `close()` cancels in-flight streaming coroutines (whose `finally` blocks
+  return engines to the pool) and then drains all N engines from the pool,
+  guaranteeing that every Engine is idle before its native resources are freed.
 
 ## Implementation Details
 
-### Global Inference Mutex
+### Engine Pool
 
 ```kotlin
 // LlamaModel.kt
-private val inferenceMutex = Mutex()
+private val enginePool = LinkedBlockingQueue<Engine>()
+@Volatile private var poolCapacity = 0
 ```
 
-The mutex is held for the **complete** conversation lifetime in every
-`generate*()` method, and is also acquired by `close()` before the engine is
-destroyed:
+The pool is filled in `loadFromPath()` with `maxConcurrency` Engine instances:
 
 ```kotlin
-// inferenceMutex is imported as mutexWithLock (see LlamaModel.kt imports)
-inferenceMutex.mutexWithLock {
-    if (!isLoaded) return@mutexWithLock "Error"
-    val conversation = createConversation(config) ?: return@mutexWithLock "Error"
-    try {
-        // ... send message / stream tokens ...
-    } finally {
-        conversation.close()   // lock released only after close()
-    }
+val concurrency = settingsManager.getMaxConcurrency().coerceAtLeast(1)
+repeat(concurrency) { index ->
+    val eng = Engine(engineConfig)
+    eng.initialize()
+    enginePool.offer(eng)
+}
+poolCapacity = concurrency
+isLoaded = true
+```
+
+Every `generate*()` method borrows one engine, uses it, and returns it in a
+`finally` block:
+
+```kotlin
+val eng = enginePool.take()          // blocks only when all N slots are busy
+var conversation: Conversation? = null
+try {
+    if (!isLoaded) return "Error"    // guard against concurrent close()
+    conversation = createConversation(eng, config)
+    // ... send message / stream tokens ...
+} catch (...) { ... }
+finally {
+    conversation?.close()
+    enginePool.offer(eng)            // always return engine to pool
 }
 ```
 
-### Why ReentrantReadWriteLock is NOT used for streaming
+### Memory Implications
 
-An earlier implementation wrapped streaming coroutines with
-`engineLifecycleLock.read {}` (a `ReentrantReadWriteLock`) to prevent
-`close()` from freeing the engine while `sendMessageAsync` callbacks were still
-firing.  This caused a subtle but critical bug under concurrent load:
+Each Engine instance loads the model weights independently.  Setting *Max
+Concurrency = N* therefore uses approximately N times the memory of a single
+model instance.  Choose N according to available device RAM:
 
-`ReentrantReadWriteLock.ReadLock` has **thread affinity** – `unlock()` must be
-called from the same thread that called `lock()`.  Kotlin coroutines on
-`Dispatchers.IO` can resume on a **different** thread after each suspension
-point (`inferenceMutex.mutexWithLock` and `suspendCancellableCoroutine` are
-both suspension points).  When a second concurrent streaming request had to
-wait for `inferenceMutex`, it suspended and resumed on a different IO thread,
-causing `IllegalMonitorStateException` when the `read {}` block tried to
-unlock – silently failing every concurrent streaming request.
+- Default (N = 1): same memory as before, no parallelism
+- N = 2: twice the model memory, two truly simultaneous inferences
+- Higher N: proportional memory increase; only beneficial if the device has
+  sufficient RAM to hold multiple copies
 
-`inferenceMutex` is a Kotlin coroutine `Mutex`, which is fully
-**coroutine-friendly**: its ownership is logical (coroutine-bound), not
-thread-bound, so thread switches between suspension points are safe.
-
-### Safe engine-close via inferenceMutex
+### Safe engine-close via pool drain
 
 ```kotlin
 // LlamaModel.close()
-isLoaded = false          // prevent new requests from entering inferenceMutex
-runBlocking {
-    inferenceMutex.mutexWithLock {
-        // At this point no inference is running.
-        scope.cancel()    // cancel any pending streaming jobs
-        engine?.close()   // safe: engine is not in use
-        engine = null
-    }
+isLoaded = false               // prevent new requests from borrowing
+scope.cancel()                 // signal in-flight streaming to stop
+val count = poolCapacity
+poolCapacity = 0
+repeat(count) {
+    val eng = enginePool.take() // wait for each engine to be returned
+    eng.close()                 // safe: engine is idle
 }
 ```
+
+When `scope.cancel()` is called, every active streaming coroutine receives a
+cancellation signal.  Its `finally` block closes the conversation and offers the
+engine back to the pool, where the drain loop above collects it.
 
 ### Request Queue (Semaphore)
 
@@ -95,10 +99,9 @@ many clients connect simultaneously:
 private var requestSemaphore = Semaphore(maxConcurrency, true /* fair */)
 ```
 
-The semaphore is initialised from the *Max Concurrency* value in Settings. With
-the inference mutex in place this value mainly controls how many requests are
-held in memory while waiting for the engine – it no longer causes
-concurrent-session errors regardless of what value is chosen.
+The semaphore is initialised from the *Max Concurrency* value in Settings, which
+is the same value used to size the engine pool.  Each request that acquires a
+semaphore permit is guaranteed to find a free engine slot in the pool.
 
 ### Early conversation close on client disconnect
 
@@ -109,9 +112,8 @@ resumes the coroutine continuation with the exception.
 
 Closing the conversation from within `onMessage` sends a stop signal to the
 native engine right away.  Without this early close, the engine would continue
-generating tokens while `inferenceMutex` was still held (because the finally
-block that calls `close()` can only run once the coroutine is scheduled and
-dispatched, which may lag behind the JNI callbacks by many tokens).
+generating tokens while the pool slot was still occupied, blocking any new
+request that needed that slot.
 
 The `finally` block still contains a `conversation.close()` call as a safety
 net.  Calling `close()` on an already-closed `Conversation` is a no-op.
@@ -122,7 +124,8 @@ immediately once the continuation has been resumed, avoiding redundant
 
 ### Methods Protected
 
-All generation methods hold `inferenceMutex` for the full conversation lifetime:
+All generation methods borrow an engine from the pool for the full conversation
+lifetime:
 
 - `generate()` – synchronous text generation
 - `generateWithContents()` – synchronous multimodal generation
@@ -131,14 +134,16 @@ All generation methods hold `inferenceMutex` for the full conversation lifetime:
 
 ## Behaviour Under Load
 
+With *Max Concurrency = N* (N engine instances in the pool):
+
 ```
-Request 1 → acquire semaphore → acquire inferenceMutex → run inference → close conversation → release mutex → release semaphore
-Request 2 → acquire semaphore → wait for inferenceMutex → acquire inferenceMutex → run inference → …
-Request 3 → wait for semaphore → …
+Request 1 → acquire semaphore → borrow engine-1 → run inference → return engine-1 → release semaphore
+Request 2 → acquire semaphore → borrow engine-2 → run inference IN PARALLEL with request 1 → …
+Request N+1 → wait for semaphore (queue) → …
 ```
 
-Requests are processed in the order they arrive (FIFO), so clients see
-predictable queuing rather than random failures.
+Requests up to N run fully in parallel.  Requests beyond N are queued at the
+semaphore and begin executing as soon as a slot frees up.
 
 ## Usage Recommendations
 
@@ -148,9 +153,9 @@ predictable queuing rather than random failures.
    between calls. Conversation history must be sent in full with every request
    (standard OpenAI format).
 
-2. **Expect queuing under concurrent load** – because inference is serialised,
-   the second request will wait for the first to finish. Plan timeouts
-   accordingly (the server allows up to 5 minutes per request).
+2. **Parallel execution up to Max Concurrency** – requests beyond the configured
+   limit are queued, not failed. Plan timeouts accordingly (the server allows up
+   to 5 minutes per request).
 
 3. **Use the `stream` parameter for long responses** – streaming lets the client
    start reading tokens while the server is still generating, reducing
@@ -158,41 +163,48 @@ predictable queuing rather than random failures.
 
 ### For Server Configuration
 
-- **Max Concurrency** (Settings) controls the size of the in-memory request
-  queue. Values > 1 are valid; they queue requests without causing errors.
-- The default value is suitable for most use cases.
+- **Max Concurrency** (Settings) controls both the engine pool size and the
+  HTTP request queue depth.  Each additional concurrent slot loads one extra
+  copy of the model weights into device RAM.
+- Default (1) is memory-efficient but serialises all requests.
+- Setting 2 or higher enables genuine parallelism at the cost of additional RAM.
 
 ## Troubleshooting
 
 ### Issue: `FAILED_PRECONDITION: A session already exists`
 
-This was the bug fixed by the `inferenceMutex` change. If it reappears, verify
-that:
+This error indicates that two conversations were created on the same Engine
+instance simultaneously.  With the pool implementation this should not occur
+because each Engine is borrowed exclusively for the duration of one
+conversation.  If it reappears, verify that:
 
 1. You are running the latest version of the app.
-2. No other code path calls `Engine.createConversation()` outside the
-   `inferenceMutex` lock.
+2. No other code path calls `Engine.createConversation()` without borrowing an
+   engine from the pool first.
+
+### Issue: Out-of-memory crash after increasing Max Concurrency
+
+**Cause**: Each Engine loads a full copy of the model into device RAM.  With a
+large model and high concurrency the device may run out of memory.
+
+**Solution**: Lower *Max Concurrency* to a value the device can sustain, then
+restart the server (a model reload is required for pool size to take effect).
 
 ### Issue: Second streaming request does not start until the first finishes fully
 
 **Cause (fixed)**: When a streaming client disconnects mid-response, the native
-engine continued generating tokens while `inferenceMutex` was still held.  The
-lock was not released until the stream ended naturally, so any concurrently
-queued request had to wait.
+engine continued generating tokens while the pool slot was still held.  The
+slot was not released until the stream ended naturally, so any concurrently
+queued request had to wait for that slot.
 
 **Fix**: The `onMessage` callback now closes the conversation immediately on
-client disconnect, sending a stop signal to the native engine without waiting
-for the coroutine finally block to run.
-
-**Cause**: The LiteRT engine processes one request at a time, so response time
-scales linearly with queue depth.
-
-**Solution**: Lower *Max Concurrency* in Settings to shed load early (returning
-HTTP 503) rather than letting requests pile up and time out.
+client disconnect, sending a stop signal to the native engine and triggering the
+`finally` block (which returns the engine to the pool) without waiting for
+natural stream completion.
 
 ### Issue: Deadlock concerns
 
 **Solution**: Deadlocks are not possible with this implementation because:
-- Each request acquires at most one lock (`inferenceMutex`).
-- No nested lock acquisition occurs.
-- The lock is always released in a `finally` block.
+- Each request acquires at most one resource (an engine pool slot).
+- No nested acquisition occurs.
+- Pool slots are always released in `finally` blocks.
