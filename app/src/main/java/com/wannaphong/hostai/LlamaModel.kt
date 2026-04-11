@@ -525,6 +525,12 @@ class LlamaModel(
 
                         val callback = object : MessageCallback {
                             override fun onMessage(message: Message) {
+                                // If the continuation was already resumed (e.g. the client
+                                // disconnected), skip further token delivery immediately.
+                                // This avoids redundant IOException throws and keeps the
+                                // native callback thread free.
+                                if (resumed.get()) return
+
                                 // Emit each token chunk directly as it arrives from the engine.
                                 // No buffering or artificial delays — let the native engine pace output.
                                 // Wrap in try-catch: exceptions must never escape a JNI callback or
@@ -534,6 +540,12 @@ class LlamaModel(
                                 } catch (e: Exception) {
                                     LogManager.w(TAG, "Token callback error (client may have disconnected): ${e.message}")
                                     if (resumed.compareAndSet(false, true)) {
+                                        // Close the conversation immediately from the callback
+                                        // thread to send a stop signal to the native engine
+                                        // right away.  Without this, the engine keeps generating
+                                        // tokens while inferenceMutex is still held, blocking
+                                        // any new request until the stream naturally ends.
+                                        try { conversation?.close() } catch (ignored: Exception) { }
                                         continuation.resumeWithException(e)
                                     }
                                 }
@@ -628,6 +640,12 @@ class LlamaModel(
 
                         val callback = object : MessageCallback {
                             override fun onMessage(message: Message) {
+                                // If the continuation was already resumed (e.g. the client
+                                // disconnected), skip further token delivery immediately.
+                                // This avoids redundant IOException throws and keeps the
+                                // native callback thread free.
+                                if (resumed.get()) return
+
                                 // Emit each token chunk directly as it arrives from the engine.
                                 // Wrap in try-catch: exceptions must never escape a JNI callback or
                                 // they will crash the native engine / the Android process.
@@ -636,6 +654,12 @@ class LlamaModel(
                                 } catch (e: Exception) {
                                     LogManager.w(TAG, "Multimodal token callback error (client may have disconnected): ${e.message}")
                                     if (resumed.compareAndSet(false, true)) {
+                                        // Close the conversation immediately from the callback
+                                        // thread to send a stop signal to the native engine
+                                        // right away.  Without this, the engine keeps generating
+                                        // tokens while inferenceMutex is still held, blocking
+                                        // any new request until the stream naturally ends.
+                                        try { conversation?.close() } catch (ignored: Exception) { }
                                         continuation.resumeWithException(e)
                                     }
                                 }
