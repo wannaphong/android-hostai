@@ -11,8 +11,8 @@ android {
         applicationId = "com.wannaphong.hostai"
         minSdk = 26
         targetSdk = 35
-        versionCode = 20
-        versionName = "1.1.9"
+        versionCode = 21
+        versionName = "1.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -67,7 +67,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     
     // LiteRT for LLM inference (0.10.1 adds Gemma 4 support with improved performance)
-    implementation("com.google.ai.edge.litertlm:litertlm-android:0.10.0")
+    implementation("com.google.ai.edge.litertlm:litertlm-android:0.15.0")
     
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
