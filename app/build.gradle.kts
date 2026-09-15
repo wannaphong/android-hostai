@@ -28,16 +28,31 @@ android {
     }
     
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
     
     kotlinOptions {
-        jvmTarget = "1.8"
+        jvmTarget = "17"
     }
     
     buildFeatures {
         viewBinding = true
+    }
+    
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
+    
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += "org/eclipse/jetty/http/encoding.properties"
+            excludes += "META-INF/DEPENDENCIES"
+            excludes += "META-INF/LICENSE*"
+            excludes += "META-INF/NOTICE*"
+            excludes += "META-INF/INDEX.LIST"
+        }
     }
 }
 
@@ -54,8 +69,8 @@ dependencies {
     implementation("com.google.android.material:material:1.10.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     
-    // Javalin for HTTP server with reliable streaming support
-    implementation("io.javalin:javalin:5.6.3")
+    // Javalin for HTTP server with reliable streaming support (v4.6.8 for Android/Jetty 9 compatibility)
+    implementation("io.javalin:javalin:4.6.8")
     
     // SLF4J for Javalin logging (required dependency)
     implementation("org.slf4j:slf4j-android:1.7.36")

@@ -96,4 +96,7 @@
     <string name="invalid_max_context_length">Invalid max context length. Please enter a value of 512 or more.</string>
     <string name="multimodal_mode_title">Multimodal Model</string>
     <string name="multimodal_mode_desc">Enable for multimodal models that include vision and audio components (e.g. Gemma 3N). Keep disabled for text-only models such as Gemma 3 1B/4B.</string>
+    <string name="api_key_title">API Key Authentication</string>
+    <string name="api_key_desc">Optional API key to protect your server from unauthorized requests on local networks. Leave empty to allow unauthenticated access.</string>
+    <string name="api_key_hint">API Key (leave blank for none)</string>
 </resources>

@@ -10,6 +10,22 @@ Replace `<phone-ip>` with your Android device's IP address (shown in the app):
 http://<phone-ip>:8080
 ```
 
+## Authentication & Security
+
+HostAI supports optional API key authentication. You can configure a secret API key in the app's **Settings** screen.
+
+- If an API key is configured, client requests must provide it via either:
+  - `Authorization: Bearer <your-api-key>` header
+  - `api-key: <your-api-key>` header
+- If no API key is configured in Settings (default), the server accepts requests without authentication for convenience and backward compatibility.
+- Cross-Origin Resource Sharing (CORS) is enabled by default, allowing web apps and browser-based frontends to interact with HostAI.
+
+```bash
+# Example with API key authentication:
+curl http://<phone-ip>:8080/v1/models \
+  -H "Authorization: Bearer my-secret-key"
+```
+
 ## Available Endpoints
 
 ### 1. List Models
@@ -32,6 +48,24 @@ curl http://<phone-ip>:8080/v1/models
       "owned_by": "hostai"
     }
   ]
+}
+```
+
+### 1.1 Retrieve Model
+
+Retrieve information about a specific model.
+
+```bash
+curl http://<phone-ip>:8080/v1/models/llama-mock-model
+```
+
+**Response:**
+```json
+{
+  "id": "llama-mock-model",
+  "object": "model",
+  "created": 1705384800,
+  "owned_by": "hostai"
 }
 ```
 
@@ -105,6 +139,32 @@ data: {"id":"chatcmpl-1705384800123","object":"chat.completion.chunk","created":
 data: {"id":"chatcmpl-1705384800123","object":"chat.completion.chunk","created":1705384800,"model":"llama-mock-model","choices":[{"index":0,"delta":{"content":" a"},"finish_reason":null}]}
 
 data: {"id":"chatcmpl-1705384800123","object":"chat.completion.chunk","created":1705384800,"model":"llama-mock-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: [DONE]
+```
+
+##### Streaming with Token Usage Statistics
+
+Pass `stream_options: {"include_usage": true}` to receive token usage in the final streaming chunk before `[DONE]`:
+
+```bash
+curl http://<phone-ip>:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "llama-mock-model",
+    "messages": [
+      {"role": "user", "content": "Tell me a story"}
+    ],
+    "stream": true,
+    "stream_options": {
+      "include_usage": true
+    }
+  }'
+```
+
+The final data chunk will include a `usage` object:
+```
+data: {"id":"chatcmpl-1705384800123","object":"chat.completion.chunk","created":1705384800,"model":"llama-mock-model","choices":[],"usage":{"prompt_tokens":12,"completion_tokens":45,"total_tokens":57}}
 
 data: [DONE]
 ```
@@ -407,6 +467,22 @@ curl -X POST http://<phone-ip>:8080/v1/chat/completions/chatcmpl-1705384800123 \
 }
 ```
 
+#### Delete a Stored Completion
+
+Delete a stored chat completion by its ID:
+
+```bash
+curl -X DELETE http://<phone-ip>:8080/v1/chat/completions/chatcmpl-1705384800123
+```
+
+**Response:**
+```json
+{
+  "id": "chatcmpl-1705384800123",
+  "object": "chat.completion.deleted",
+  "deleted": true
+}
+```
 
 ### 4. Text Completions
 

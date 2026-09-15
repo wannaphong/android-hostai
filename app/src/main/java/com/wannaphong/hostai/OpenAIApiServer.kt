@@ -54,8 +54,8 @@ class OpenAIApiServer(
     
     private var app: Javalin? = null
     
-    // Storage for chat completions with store=true
-    private val storedCompletions = ConcurrentHashMap<String, StoredCompletion>()
+    // Storage manager for chat completions with disk persistence
+    private val storedCompletionsManager by lazy { StoredCompletionsManager.getInstance(context) }
     
     // Settings manager for feature toggles
     private val settingsManager = SettingsManager(context)
@@ -99,16 +99,18 @@ class OpenAIApiServer(
             
             app = Javalin.create { config ->
                 // Configure Javalin
-                config.http.maxRequestSize = MAX_REQUEST_BODY_SIZE.toLong()
+                config.maxRequestSize = MAX_REQUEST_BODY_SIZE.toLong()
                 config.showJavalinBanner = false
-                config.http.asyncTimeout = 300000L // 5 minutes for streaming
-                config.jetty.server { Server(threadPool) }
+                config.asyncRequestTimeout = 300000L // 5 minutes for streaming
+                config.server { Server(threadPool) }
+                config.enableCorsForAllOrigins()
             }.apply {
                 // Health check
                 get("/health") { ctx -> handleHealth(ctx) }
                 
                 // Model endpoints
                 get("/v1/models") { ctx -> handleModels(ctx) }
+                get("/v1/models/{model}") { ctx -> handleModel(ctx) }
                 
                 // Completion endpoints
                 post("/v1/chat/completions") { ctx -> handleChatCompletions(ctx) }
@@ -118,6 +120,7 @@ class OpenAIApiServer(
                 get("/v1/chat/completions/{completion_id}") { ctx -> handleGetStoredCompletion(ctx) }
                 get("/v1/chat/completions/{completion_id}/messages") { ctx -> handleGetStoredCompletionMessages(ctx) }
                 post("/v1/chat/completions/{completion_id}") { ctx -> handleUpdateStoredCompletion(ctx) }
+                delete("/v1/chat/completions/{completion_id}") { ctx -> handleDeleteStoredCompletion(ctx) }
                 
                 // UI endpoints
                 get("/") { ctx -> handleRoot(ctx) }
@@ -152,6 +155,34 @@ class OpenAIApiServer(
     }
     
     /**
+     * Check if the API key in the request matches the configured key in settings.
+     * Returns true if valid or if no key is configured, false otherwise (after setting 401 response).
+     */
+    private fun checkApiKey(ctx: JavalinContext): Boolean {
+        if (!settingsManager.isApiKeyRequired()) return true
+        val authHeader = ctx.header("Authorization")
+        val expectedKey = settingsManager.getApiKey()
+        val providedKey = if (authHeader?.startsWith("Bearer ", ignoreCase = true) == true) {
+            authHeader.substring(7).trim()
+        } else {
+            ctx.header("api-key")?.trim()
+        }
+        if (providedKey != expectedKey) {
+            val errorResponse = mapOf(
+                "error" to mapOf(
+                    "message" to "Incorrect API key provided",
+                    "type" to "invalid_request_error",
+                    "code" to "invalid_api_key"
+                )
+            )
+            ctx.status(401).contentType("application/json").result(gson.toJson(errorResponse))
+            LogManager.w(TAG, "Request rejected: invalid or missing API key")
+            return false
+        }
+        return true
+    }
+
+    /**
      * Check if an endpoint is enabled and return error if not
      */
     private fun checkEndpointEnabled(ctx: JavalinContext, endpointName: String, isEnabled: Boolean): Boolean {
@@ -185,36 +216,28 @@ class OpenAIApiServer(
      * Get all stored completions
      */
     fun getStoredCompletions(): List<StoredCompletion> {
-        return storedCompletions.values.toList().sortedByDescending { it.created }
+        return storedCompletionsManager.getAllCompletions()
     }
     
     /**
      * Get a specific stored completion by ID
      */
     fun getStoredCompletionById(id: String): StoredCompletion? {
-        return storedCompletions[id]
+        return storedCompletionsManager.getCompletion(id)
     }
     
     /**
      * Clear all stored completions
      */
     fun clearAllStoredCompletions(): Int {
-        val count = storedCompletions.size
-        storedCompletions.clear()
-        LogManager.i(TAG, "Cleared $count stored completions")
-        return count
+        return storedCompletionsManager.clearAllCompletions()
     }
     
     /**
      * Delete a specific stored completion
      */
     fun deleteStoredCompletion(id: String): Boolean {
-        val removed = storedCompletions.remove(id)
-        if (removed != null) {
-            LogManager.i(TAG, "Deleted stored completion: $id")
-            return true
-        }
-        return false
+        return storedCompletionsManager.deleteCompletion(id)
     }
     
     private fun handleHealth(ctx: JavalinContext) {
@@ -230,6 +253,7 @@ class OpenAIApiServer(
     
     private fun handleModels(ctx: JavalinContext) {
         LogManager.d(TAG, "Handling /v1/models")
+        if (!checkApiKey(ctx)) return
         
         val models = mapOf(
             "object" to "list",
@@ -244,6 +268,33 @@ class OpenAIApiServer(
         )
         
         ctx.contentType("application/json").result(gson.toJson(models))
+    }
+
+    private fun handleModel(ctx: JavalinContext) {
+        val modelId = ctx.pathParam("model")
+        LogManager.d(TAG, "Handling /v1/models/$modelId")
+        if (!checkApiKey(ctx)) return
+
+        val currentModel = model.getModelName()
+        if (modelId == currentModel || modelId == "default" || modelId == "model") {
+            val modelData = mapOf(
+                "id" to currentModel,
+                "object" to "model",
+                "created" to System.currentTimeMillis() / 1000,
+                "owned_by" to "hostai"
+            )
+            ctx.contentType("application/json").result(gson.toJson(modelData))
+        } else {
+            val errorResponse = mapOf(
+                "error" to mapOf(
+                    "message" to "The model '$modelId' does not exist",
+                    "type" to "invalid_request_error",
+                    "param" to "model",
+                    "code" to "model_not_found"
+                )
+            )
+            ctx.status(404).contentType("application/json").result(gson.toJson(errorResponse))
+        }
     }
     
     private fun handleRoot(ctx: JavalinContext) {
@@ -363,6 +414,8 @@ class OpenAIApiServer(
     private fun handleChatCompletions(ctx: JavalinContext) {
         LogManager.d(TAG, "Handling /v1/chat/completions")
         
+        if (!checkApiKey(ctx)) return
+        
         // Check if chat completions endpoint is enabled
         if (!checkEndpointEnabled(ctx, "Chat Completions", settingsManager.isChatCompletionsEnabled())) {
             return
@@ -391,6 +444,9 @@ class OpenAIApiServer(
             val store = request.get("store")?.asBoolean ?: false
             val metadata = parseMetadata(request.get("metadata")?.asJsonObject)
             
+            val streamOptions = request.getAsJsonObject("stream_options")
+            val includeUsage = streamOptions?.get("include_usage")?.asBoolean ?: false
+
             // Extract session ID using helper method
             val sessionId = extractSessionId(ctx, request)
             
@@ -418,7 +474,7 @@ class OpenAIApiServer(
             LogManager.d(TAG, "Concurrency permit acquired for chat completion")
             try {
                 if (stream) {
-                    handleChatStreamingResponse(ctx, contents, config, sessionId, messages, store, metadata, bodyText)
+                    handleChatStreamingResponse(ctx, contents, config, sessionId, messages, store, metadata, bodyText, includeUsage)
                 } else {
                     handleChatNonStreamingResponse(ctx, contents, config, sessionId, messages, store, metadata, bodyText)
                 }
@@ -513,7 +569,7 @@ class OpenAIApiServer(
                 metadata = metadata
             )
             
-            storedCompletions[id] = storedCompletion
+            storedCompletionsManager.saveCompletion(storedCompletion)
             LogManager.i(TAG, "Stored completion with ID: $id")
         }
         
@@ -557,7 +613,8 @@ class OpenAIApiServer(
         messages: com.google.gson.JsonArray,
         store: Boolean,
         metadata: Map<String, Any>?,
-        bodyText: String
+        bodyText: String,
+        includeUsage: Boolean = false
     ) {
         LogManager.i(TAG, "Starting chat streaming response for session: $sessionId")
         
@@ -576,15 +633,16 @@ class OpenAIApiServer(
         ctx.header("Connection", "keep-alive")
         
         // Get the response output stream
-        val outputStream = ctx.res().outputStream
+        val outputStream = ctx.res.outputStream
         
         // Accumulate response for logging (using StringBuffer for thread safety)
         val accumulatedResponse = StringBuffer()
         
+        var job: Job? = null
         try {
             var tokenCount = 0
             
-            val job = if (contents is String) {
+            job = if (contents is String) {
                 model.generateStream(contents, config, sessionId) { token ->
                     try {
                         tokenCount++
@@ -601,29 +659,33 @@ class OpenAIApiServer(
                             "choices" to listOf(
                                 mapOf(
                                     "index" to 0,
-                                "delta" to mapOf(
-                                    "content" to token
-                                ),
-                                "finish_reason" to null
+                                    "delta" to mapOf(
+                                        "content" to token
+                                    ),
+                                    "finish_reason" to null
+                                )
                             )
                         )
-                    )
                     
-                    // Write SSE format: "data: {json}\n\n"
-                    val sseData = "data: ${gson.toJson(chunk)}\n\n"
-                    outputStream.write(sseData.toByteArray(Charsets.UTF_8))
-                    outputStream.flush()
-                    
-                    LogManager.d(TAG, "Streamed token $tokenCount")
-                } catch (e: IOException) {
-                    // Client disconnected - stop streaming gracefully
-                    LogManager.d(TAG, "Client disconnected during streaming (token $tokenCount)")
-                    throw e
-                } catch (e: Exception) {
-                    LogManager.e(TAG, "Error writing token to stream", e)
-                    throw e
+                        // Write SSE format: "data: {json}\n\n"
+                        val sseData = "data: ${gson.toJson(chunk)}\n\n"
+                        outputStream.write(sseData.toByteArray(Charsets.UTF_8))
+                        outputStream.flush()
+                        
+                        LogManager.d(TAG, "Streamed token $tokenCount")
+                    } catch (e: IOException) {
+                        // Client disconnected - stop streaming gracefully
+                        LogManager.d(TAG, "Client disconnected during streaming (token $tokenCount)")
+                        throw e
+                    } catch (e: IllegalStateException) {
+                        // Handle Jetty output stream state errors gracefully
+                        LogManager.d(TAG, "Output stream no longer writable during streaming (token $tokenCount): ${e.message}")
+                        throw e
+                    } catch (e: Exception) {
+                        LogManager.e(TAG, "Error writing token to stream", e)
+                        throw e
+                    }
                 }
-            }
             } else {
                 // Multimodal streaming
                 @Suppress("UNCHECKED_CAST")
@@ -661,6 +723,10 @@ class OpenAIApiServer(
                         // Client disconnected - stop streaming gracefully
                         LogManager.d(TAG, "Client disconnected during multimodal streaming (token $tokenCount)")
                         throw e
+                    } catch (e: IllegalStateException) {
+                        // Handle Jetty output stream state errors gracefully
+                        LogManager.d(TAG, "Output stream no longer writable during multimodal streaming (token $tokenCount): ${e.message}")
+                        throw e
                     } catch (e: Exception) {
                         LogManager.e(TAG, "Error writing multimodal token to stream", e)
                         throw e
@@ -672,7 +738,17 @@ class OpenAIApiServer(
             // Using runBlocking is necessary here because Javalin handlers are not suspend functions
             // Blocking is acceptable for streaming responses as we need to keep the connection open
             if (job != null) {
-                runBlocking { job.join() }
+                try {
+                    runBlocking { job.join() }
+                } catch (e: InterruptedException) {
+                    LogManager.d(TAG, "Chat streaming interrupted (client likely disconnected): ${e.message}")
+                    job.cancel()
+                    return
+                } catch (e: CancellationException) {
+                    LogManager.d(TAG, "Chat streaming cancelled: ${e.message}")
+                    job.cancel()
+                    return
+                }
             } else {
                 LogManager.e(TAG, "Failed to start streaming: generateStream returned null")
                 // Write error chunk to client
@@ -699,7 +775,7 @@ class OpenAIApiServer(
             
             // Send final chunk with finish_reason
             try {
-                val finalChunk = mapOf(
+                val finalChunk = mutableMapOf<String, Any>(
                     "id" to id,
                     "object" to "chat.completion.chunk",
                     "created" to created,
@@ -712,6 +788,28 @@ class OpenAIApiServer(
                         )
                     )
                 )
+                if (includeUsage) {
+                    val promptTokens = when (contents) {
+                        is String -> contents.split(" ").size
+                        else -> {
+                            @Suppress("UNCHECKED_CAST")
+                            val contentList = contents as List<Content>
+                            contentList.sumOf { content ->
+                                when (content) {
+                                    is Content.Text -> content.toString().split(" ").size
+                                    is Content.ImageBytes -> 85
+                                    is Content.AudioBytes -> 50
+                                    else -> 10
+                                }
+                            }
+                        }
+                    }
+                    finalChunk["usage"] = mapOf(
+                        "prompt_tokens" to promptTokens,
+                        "completion_tokens" to tokenCount,
+                        "total_tokens" to (promptTokens + tokenCount)
+                    )
+                }
                 val finalData = "data: ${gson.toJson(finalChunk)}\n\ndata: [DONE]\n\n"
                 outputStream.write(finalData.toByteArray(Charsets.UTF_8))
                 outputStream.flush()
@@ -748,14 +846,25 @@ class OpenAIApiServer(
         } catch (e: IOException) {
             // Client disconnected during chat streaming — not an application error.
             LogManager.d(TAG, "Client disconnected during chat streaming: ${e.message}")
+            job?.cancel()
+        } catch (e: InterruptedException) {
+            // Client disconnected or thread interrupted during chat streaming — not an application error.
+            LogManager.d(TAG, "Chat streaming interrupted (client likely disconnected): ${e.message}")
+            job?.cancel()
+        } catch (e: CancellationException) {
+            LogManager.d(TAG, "Chat streaming cancelled: ${e.message}")
+            job?.cancel()
         } catch (e: Exception) {
             LogManager.e(TAG, "Error in chat streaming", e)
+            job?.cancel()
         }
         // Note: Javalin manages the output stream lifecycle; don't close it manually
     }
     
     private fun handleCompletions(ctx: JavalinContext) {
         LogManager.d(TAG, "Handling /v1/completions")
+        
+        if (!checkApiKey(ctx)) return
         
         // Check if text completions endpoint is enabled
         if (!checkEndpointEnabled(ctx, "Text Completions", settingsManager.isTextCompletionsEnabled())) {
@@ -870,15 +979,16 @@ class OpenAIApiServer(
         ctx.header("Connection", "keep-alive")
         
         // Get the response output stream
-        val outputStream = ctx.res().outputStream
+        val outputStream = ctx.res.outputStream
         
         // Accumulate response for logging (using StringBuffer for thread safety)
         val accumulatedResponse = StringBuffer()
         
+        var job: Job? = null
         try {
             var tokenCount = 0
             
-            val job = model.generateStream(prompt, config, sessionId) { token ->
+            job = model.generateStream(prompt, config, sessionId) { token ->
                 try {
                     tokenCount++
                     
@@ -910,6 +1020,10 @@ class OpenAIApiServer(
                     // Client disconnected - stop streaming gracefully
                     LogManager.d(TAG, "Client disconnected during streaming (token $tokenCount)")
                     throw e
+                } catch (e: IllegalStateException) {
+                    // Handle Jetty output stream state errors gracefully
+                    LogManager.d(TAG, "Output stream no longer writable during streaming (token $tokenCount): ${e.message}")
+                    throw e
                 } catch (e: Exception) {
                     LogManager.e(TAG, "Error writing token to stream", e)
                     throw e
@@ -920,7 +1034,17 @@ class OpenAIApiServer(
             // Using runBlocking is necessary here because Javalin handlers are not suspend functions
             // Blocking is acceptable for streaming responses as we need to keep the connection open
             if (job != null) {
-                runBlocking { job.join() }
+                try {
+                    runBlocking { job.join() }
+                } catch (e: InterruptedException) {
+                    LogManager.d(TAG, "Completion streaming interrupted (client likely disconnected): ${e.message}")
+                    job.cancel()
+                    return
+                } catch (e: CancellationException) {
+                    LogManager.d(TAG, "Completion streaming cancelled: ${e.message}")
+                    job.cancel()
+                    return
+                }
             } else {
                 LogManager.e(TAG, "Failed to start streaming: generateStream returned null")
                 // Write error chunk to client
@@ -991,8 +1115,17 @@ class OpenAIApiServer(
         } catch (e: IOException) {
             // Client disconnected during completion streaming — not an application error.
             LogManager.d(TAG, "Client disconnected during completion streaming: ${e.message}")
+            job?.cancel()
+        } catch (e: InterruptedException) {
+            // Client disconnected or thread interrupted during completion streaming — not an application error.
+            LogManager.d(TAG, "Completion streaming interrupted (client likely disconnected): ${e.message}")
+            job?.cancel()
+        } catch (e: CancellationException) {
+            LogManager.d(TAG, "Completion streaming cancelled: ${e.message}")
+            job?.cancel()
         } catch (e: Exception) {
             LogManager.e(TAG, "Error in completion streaming", e)
+            job?.cancel()
         }
         // Note: Javalin manages the output stream lifecycle; don't close it manually
     }
@@ -1206,8 +1339,10 @@ class OpenAIApiServer(
         val completionId = ctx.pathParam("completion_id")
         LogManager.d(TAG, "Handling GET /v1/chat/completions/$completionId")
         
+        if (!checkApiKey(ctx)) return
+        
         try {
-            val storedCompletion = storedCompletions[completionId]
+            val storedCompletion = storedCompletionsManager.getCompletion(completionId)
             
             if (storedCompletion == null) {
                 val errorResponse = mapOf(
@@ -1262,8 +1397,10 @@ class OpenAIApiServer(
         val completionId = ctx.pathParam("completion_id")
         LogManager.d(TAG, "Handling GET /v1/chat/completions/$completionId/messages")
         
+        if (!checkApiKey(ctx)) return
+        
         try {
-            val storedCompletion = storedCompletions[completionId]
+            val storedCompletion = storedCompletionsManager.getCompletion(completionId)
             
             if (storedCompletion == null) {
                 val errorResponse = mapOf(
@@ -1311,8 +1448,10 @@ class OpenAIApiServer(
         val completionId = ctx.pathParam("completion_id")
         LogManager.d(TAG, "Handling POST /v1/chat/completions/$completionId")
         
+        if (!checkApiKey(ctx)) return
+        
         try {
-            val storedCompletion = storedCompletions[completionId]
+            val storedCompletion = storedCompletionsManager.getCompletion(completionId)
             
             if (storedCompletion == null) {
                 val errorResponse = mapOf(
@@ -1342,8 +1481,8 @@ class OpenAIApiServer(
                 return
             }
             
-            // Update metadata
-            storedCompletion.metadata = newMetadata
+            // Update metadata in manager and model
+            storedCompletionsManager.updateMetadata(completionId, newMetadata)
             
             val response = mutableMapOf<String, Any>(
                 "id" to storedCompletion.id,
@@ -1369,6 +1508,45 @@ class OpenAIApiServer(
             LogManager.e(TAG, "Error updating completion $completionId", e)
             val errorResponse = mapOf(
                 "error" to mapOf("message" to (e.message ?: "Failed to update completion"))
+            )
+            ctx.status(500).contentType("application/json").result(gson.toJson(errorResponse))
+        }
+    }
+
+    /**
+     * Handle DELETE /v1/chat/completions/{completion_id}
+     * Delete a stored chat completion.
+     */
+    private fun handleDeleteStoredCompletion(ctx: JavalinContext) {
+        val completionId = ctx.pathParam("completion_id")
+        LogManager.d(TAG, "Handling DELETE /v1/chat/completions/$completionId")
+        
+        if (!checkApiKey(ctx)) return
+        
+        try {
+            val deleted = storedCompletionsManager.deleteCompletion(completionId)
+            
+            if (deleted) {
+                val response = mapOf(
+                    "id" to completionId,
+                    "object" to "chat.completion.deleted",
+                    "deleted" to true
+                )
+                LogManager.i(TAG, "Deleted stored completion: $completionId")
+                ctx.contentType("application/json").result(gson.toJson(response))
+            } else {
+                val errorResponse = mapOf(
+                    "error" to mapOf(
+                        "message" to "Completion not found: $completionId",
+                        "type" to "invalid_request_error"
+                    )
+                )
+                ctx.status(404).contentType("application/json").result(gson.toJson(errorResponse))
+            }
+        } catch (e: Exception) {
+            LogManager.e(TAG, "Error deleting stored completion $completionId", e)
+            val errorResponse = mapOf(
+                "error" to mapOf("message" to (e.message ?: "Failed to delete completion"))
             )
             ctx.status(500).contentType("application/json").result(gson.toJson(errorResponse))
         }
@@ -1449,6 +1627,6 @@ class OpenAIApiServer(
                 else -> entry.value.toString()
             }
             entry.key to value
-        }.filterValues { it != null } as Map<String, Any>
+        }.filterValues { it != null }.mapValues { it.value!! }
     }
 }

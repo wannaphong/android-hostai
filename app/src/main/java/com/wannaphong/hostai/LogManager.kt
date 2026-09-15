@@ -39,7 +39,9 @@ object LogManager {
      */
     fun d(tag: String, message: String) {
         addLog(LogLevel.DEBUG, tag, message)
-        Log.d(tag, message)
+        try {
+            Log.d(tag, message)
+        } catch (_: Throwable) {}
     }
     
     /**
@@ -47,7 +49,9 @@ object LogManager {
      */
     fun i(tag: String, message: String) {
         addLog(LogLevel.INFO, tag, message)
-        Log.i(tag, message)
+        try {
+            Log.i(tag, message)
+        } catch (_: Throwable) {}
     }
     
     /**
@@ -55,7 +59,9 @@ object LogManager {
      */
     fun w(tag: String, message: String) {
         addLog(LogLevel.WARN, tag, message)
-        Log.w(tag, message)
+        try {
+            Log.w(tag, message)
+        } catch (_: Throwable) {}
     }
     
     /**
@@ -68,11 +74,13 @@ object LogManager {
             message
         }
         addLog(LogLevel.ERROR, tag, fullMessage)
-        if (throwable != null) {
-            Log.e(tag, message, throwable)
-        } else {
-            Log.e(tag, message)
-        }
+        try {
+            if (throwable != null) {
+                Log.e(tag, message, throwable)
+            } else {
+                Log.e(tag, message)
+            }
+        } catch (_: Throwable) {}
     }
     
     private fun addLog(level: LogLevel, tag: String, message: String) {

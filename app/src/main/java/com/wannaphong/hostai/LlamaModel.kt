@@ -15,6 +15,7 @@ import com.google.ai.edge.litertlm.EngineConfig
 import com.google.ai.edge.litertlm.Message
 import com.google.ai.edge.litertlm.MessageCallback
 import com.google.ai.edge.litertlm.SamplerConfig
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -544,6 +545,12 @@ class LlamaModel(
                 suspendCancellableCoroutine<Unit> { continuation ->
                     val resumed = AtomicBoolean(false)
 
+                    continuation.invokeOnCancellation {
+                        if (resumed.compareAndSet(false, true)) {
+                            try { conversation?.close() } catch (ignored: Exception) { }
+                        }
+                    }
+
                     val callback = object : MessageCallback {
                         override fun onMessage(message: Message) {
                             // If the continuation was already resumed (e.g. the client
@@ -592,10 +599,14 @@ class LlamaModel(
                     conversation.sendMessageAsync(userMessage, callback)
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Streaming failed", e)
-                LogManager.e(TAG, "Streaming failed: ${e.message}", e)
-                try { onToken("Error: ${e.message}") } catch (ignored: Exception) {
-                    // Client may have already disconnected; nothing to do.
+                if (e !is CancellationException) {
+                    Log.e(TAG, "Streaming failed", e)
+                    LogManager.e(TAG, "Streaming failed: ${e.message}", e)
+                    try { onToken("Error: ${e.message}") } catch (ignored: Exception) {
+                        // Client may have already disconnected; nothing to do.
+                    }
+                } else {
+                    LogManager.d(TAG, "Streaming coroutine cancelled")
                 }
             } finally {
                 try { conversation?.close() } catch (e: Exception) {
@@ -656,6 +667,12 @@ class LlamaModel(
                 suspendCancellableCoroutine<Unit> { continuation ->
                     val resumed = AtomicBoolean(false)
 
+                    continuation.invokeOnCancellation {
+                        if (resumed.compareAndSet(false, true)) {
+                            try { conversation?.close() } catch (ignored: Exception) { }
+                        }
+                    }
+
                     val callback = object : MessageCallback {
                         override fun onMessage(message: Message) {
                             // If the continuation was already resumed (e.g. the client
@@ -703,10 +720,14 @@ class LlamaModel(
                     conversation.sendMessageAsync(userMessage, callback)
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Multimodal streaming failed", e)
-                LogManager.e(TAG, "Multimodal streaming failed: ${e.message}", e)
-                try { onToken("Error: ${e.message}") } catch (ignored: Exception) {
-                    // Client may have already disconnected; nothing to do.
+                if (e !is CancellationException) {
+                    Log.e(TAG, "Multimodal streaming failed", e)
+                    LogManager.e(TAG, "Multimodal streaming failed: ${e.message}", e)
+                    try { onToken("Error: ${e.message}") } catch (ignored: Exception) {
+                        // Client may have already disconnected; nothing to do.
+                    }
+                } else {
+                    LogManager.d(TAG, "Multimodal streaming coroutine cancelled")
                 }
             } finally {
                 try { conversation?.close() } catch (e: Exception) {

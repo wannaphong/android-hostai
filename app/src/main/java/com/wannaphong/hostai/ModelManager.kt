@@ -207,6 +207,18 @@ class ModelManager(private val context: Context) {
                             return false
                         }
                     }
+                } else {
+                    // Clean up any cached copy in internal model_cache
+                    try {
+                        val cacheDir = File(context.filesDir, "model_cache")
+                        val cachedFile = File(cacheDir, model.name)
+                        if (cachedFile.exists()) {
+                            val deleted = cachedFile.delete()
+                            LogManager.i(TAG, "Deleted cached model file: ${cachedFile.absolutePath}, success=$deleted")
+                        }
+                    } catch (e: Exception) {
+                        LogManager.w(TAG, "Failed to clean up cached model copy: ${e.message}")
+                    }
                 }
                 
                 // Remove from list

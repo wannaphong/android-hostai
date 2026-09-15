@@ -35,6 +35,9 @@ class SettingsActivity : AppCompatActivity() {
         // Load port setting
         binding.portEditText.setText(settingsManager.getCustomPort().toString())
         
+        // Load API key setting
+        binding.apiKeyEditText.setText(settingsManager.getApiKey())
+        
         // Load max concurrency setting
         binding.maxConcurrencyEditText.setText(settingsManager.getMaxConcurrency().toString())
 
@@ -141,6 +144,7 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         settingsManager.setCustomPort(port)
+        settingsManager.setApiKey(binding.apiKeyEditText.text?.toString() ?: "")
         settingsManager.setMaxConcurrency(maxConcurrency)
         settingsManager.setMaxContextLength(maxContextLength)
         

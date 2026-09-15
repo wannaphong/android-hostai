@@ -30,24 +30,9 @@ import java.util.*
 class StoredCompletionsActivity : AppCompatActivity() {
     
     private lateinit var binding: ActivityStoredCompletionsBinding
-    private var apiServerService: ApiServerService? = null
-    private var isBound = false
     private lateinit var adapter: CompletionsAdapter
     private val gson = GsonBuilder().setPrettyPrinting().create()
-    
-    private val serviceConnection = object : ServiceConnection {
-        override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
-            val binder = service as ApiServerService.LocalBinder
-            apiServerService = binder.getService()
-            isBound = true
-            loadCompletions()
-        }
-        
-        override fun onServiceDisconnected(name: ComponentName?) {
-            apiServerService = null
-            isBound = false
-        }
-    }
+    private val completionsManager by lazy { StoredCompletionsManager.getInstance(this) }
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -55,15 +40,7 @@ class StoredCompletionsActivity : AppCompatActivity() {
         setContentView(binding.root)
         
         setupUI()
-        bindToService()
-    }
-    
-    override fun onDestroy() {
-        super.onDestroy()
-        if (isBound) {
-            unbindService(serviceConnection)
-            isBound = false
-        }
+        loadCompletions()
     }
     
     private fun setupUI() {
@@ -99,23 +76,8 @@ class StoredCompletionsActivity : AppCompatActivity() {
         }
     }
     
-    private fun bindToService() {
-        val intent = Intent(this, ApiServerService::class.java)
-        bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
-    }
-    
     private fun loadCompletions() {
-        val apiServer = apiServerService?.getApiServer()
-        if (apiServer == null) {
-            binding.emptyStateText.visibility = View.VISIBLE
-            binding.emptyStateText.text = "Server is not running"
-            binding.completionsRecyclerView.visibility = View.GONE
-            binding.exportAllButton.isEnabled = false
-            binding.clearAllButton.isEnabled = false
-            return
-        }
-        
-        val completions = apiServer.getStoredCompletions()
+        val completions = completionsManager.getAllCompletions()
         
         if (completions.isEmpty()) {
             binding.emptyStateText.visibility = View.VISIBLE
@@ -179,8 +141,7 @@ class StoredCompletionsActivity : AppCompatActivity() {
     }
     
     private fun exportAllCompletions() {
-        val apiServer = apiServerService?.getApiServer() ?: return
-        val completions = apiServer.getStoredCompletions()
+        val completions = completionsManager.getAllCompletions()
         
         if (completions.isEmpty()) {
             Toast.makeText(this, "No completions to export", Toast.LENGTH_SHORT).show()
@@ -205,8 +166,7 @@ class StoredCompletionsActivity : AppCompatActivity() {
             .setTitle("Delete Completion")
             .setMessage("Delete completion ${completion.id}?")
             .setPositiveButton("Delete") { _, _ ->
-                val apiServer = apiServerService?.getApiServer()
-                if (apiServer?.deleteStoredCompletion(completion.id) == true) {
+                if (completionsManager.deleteCompletion(completion.id)) {
                     Toast.makeText(this, "Deleted", Toast.LENGTH_SHORT).show()
                     loadCompletions()
                 } else {
@@ -218,14 +178,17 @@ class StoredCompletionsActivity : AppCompatActivity() {
     }
     
     private fun showClearAllConfirmation() {
-        val apiServer = apiServerService?.getApiServer() ?: return
-        val count = apiServer.getStoredCompletions().size
+        val count = completionsManager.getAllCompletions().size
+        if (count == 0) {
+            Toast.makeText(this, "No completions to clear", Toast.LENGTH_SHORT).show()
+            return
+        }
         
         AlertDialog.Builder(this)
             .setTitle("Clear All Completions")
             .setMessage("Delete all $count stored completion(s)?")
             .setPositiveButton("Clear All") { _, _ ->
-                val cleared = apiServer.clearAllStoredCompletions()
+                val cleared = completionsManager.clearAllCompletions()
                 Toast.makeText(this, "Cleared $cleared completion(s)", Toast.LENGTH_SHORT).show()
                 loadCompletions()
             }

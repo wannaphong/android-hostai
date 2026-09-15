@@ -8,10 +8,13 @@ An Android application that uses [LiteRT-LM](https://github.com/google-ai-edge/L
 
 - 🚀 OpenAI-compatible API endpoints
 - 🎨 **Multimodal support** - Send images and audio in chat messages (OpenAI format)
+- 🔒 **Optional API Key Authentication** - Secure endpoints via Bearer token or `api-key` header
+- 🌐 **CORS Support** - Connect directly from web applications and browser frontends
+- 💾 **Persistent Chat Storage** - Stored chat completions persist reliably across server restarts
 - 📱 Native Android app with Material Design UI
-- 🔄 Foreground service for reliable server operation
+- 🔄 Foreground service for reliable background server operation
 - 🌐 Local network access via WiFi
-- 🔌 Compatible with OpenAI client libraries
+- 🔌 Compatible with OpenAI client libraries (Python, Node.js, curl)
 - ⚡ Optimized for ARM-based Android devices using LiteRT with GPU acceleration
 
 ## API Endpoints
@@ -19,7 +22,12 @@ An Android application that uses [LiteRT-LM](https://github.com/google-ai-edge/L
 The server implements the following OpenAI-compatible endpoints:
 
 - `GET /v1/models` - List available models
-- `POST /v1/chat/completions` - Chat completions (ChatGPT-style) with multimodal support
+- `GET /v1/models/{model}` - Retrieve model details
+- `POST /v1/chat/completions` - Chat completions (ChatGPT-style) with streaming, token usage stats, and multimodal support
+- `GET /v1/chat/completions/{completion_id}` - Get a stored chat completion
+- `GET /v1/chat/completions/{completion_id}/messages` - Get messages from a stored chat completion
+- `POST /v1/chat/completions/{completion_id}` - Update stored completion metadata
+- `DELETE /v1/chat/completions/{completion_id}` - Delete a stored chat completion
 - `POST /v1/completions` - Text completions
 - `GET /health` - Health check endpoint
 - `GET /` - Web interface with API documentation
@@ -31,7 +39,7 @@ The server implements the following OpenAI-compatible endpoints:
 
 - Android Studio (2022.3 or later)
 - Android SDK (API level 26+)
-- JDK 8 or higher
+- JDK 17 or higher
 
 Note: With the LiteRT library integration, you no longer need to manually build llama.cpp or configure NDK/CMake.
 
@@ -227,7 +235,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## Privacy Policy
 
-We doesn't collect any your privacy data in our aplication. The Application doesn't need any internet to working.
+We do not collect any personal data in our application. The application does not require an active internet connection to work.
 
 
 ## Open source

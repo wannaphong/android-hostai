@@ -323,24 +323,31 @@ class MainActivity : AppCompatActivity() {
     
     private fun getLocalIpAddress(): String {
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                // For Android 12+, use ConnectivityManager
-                val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-                val network = connectivityManager.activeNetwork
-                val linkProperties = connectivityManager.getLinkProperties(network)
-                linkProperties?.linkAddresses?.forEach { linkAddress ->
-                    val address = linkAddress.address
-                    if (!address.isLoopbackAddress && address is java.net.Inet4Address) {
-                        return address.hostAddress ?: "localhost"
+            val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            val network = connectivityManager?.activeNetwork
+            val linkProperties = connectivityManager?.getLinkProperties(network)
+            linkProperties?.linkAddresses?.forEach { linkAddress ->
+                val address = linkAddress.address
+                if (!address.isLoopbackAddress && address is java.net.Inet4Address) {
+                    val hostAddress = address.hostAddress
+                    if (!hostAddress.isNullOrEmpty()) {
+                        return hostAddress
                     }
                 }
-            } else {
-                // For older Android versions, use WifiManager
-                @Suppress("DEPRECATION")
-                val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-                @Suppress("DEPRECATION")
-                val ipAddress = wifiManager.connectionInfo.ipAddress
-                return Formatter.formatIpAddress(ipAddress)
+            }
+
+            // Fallback: iterate over active non-loopback network interfaces
+            val interfaces = java.net.NetworkInterface.getNetworkInterfaces() ?: return "localhost"
+            for (networkInterface in interfaces) {
+                if (networkInterface.isLoopback || !networkInterface.isUp) continue
+                for (address in networkInterface.inetAddresses) {
+                    if (!address.isLoopbackAddress && address is java.net.Inet4Address) {
+                        val hostAddress = address.hostAddress
+                        if (!hostAddress.isNullOrEmpty()) {
+                            return hostAddress
+                        }
+                    }
+                }
             }
         } catch (e: Exception) {
             return "localhost"

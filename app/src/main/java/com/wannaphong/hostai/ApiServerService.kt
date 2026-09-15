@@ -14,6 +14,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
@@ -32,6 +33,7 @@ class ApiServerService : Service() {
     // Scope for background operations (model loading, server startup).
     // Cancelled in onDestroy() so any in-flight coroutines are cleaned up.
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var startupJob: Job? = null
     
     companion object {
         private const val TAG = "ApiServerService"
@@ -129,7 +131,8 @@ class ApiServerService : Service() {
         // main thread is never blocked.  Crucially the HTTP server is started
         // BEFORE model loading begins so that the port is open right away and
         // clients are not greeted with "connection refused" while the model loads.
-        serviceScope.launch {
+        startupJob?.cancel()
+        startupJob = serviceScope.launch {
             try {
                 // Create the LlamaModel wrapper (lightweight – no I/O yet)
                 LogManager.i(TAG, "Initializing model...")
@@ -160,7 +163,12 @@ class ApiServerService : Service() {
                 LogManager.e(TAG, "Failed to start server", e)
                 // Clean up foreground service if server failed to start
                 try {
-                    stopForeground(true)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                        stopForeground(STOP_FOREGROUND_REMOVE)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        stopForeground(true)
+                    }
                 } catch (ex: Exception) {
                     LogManager.w(TAG, "Error stopping foreground service: ${ex.message}")
                 }
@@ -177,11 +185,23 @@ class ApiServerService : Service() {
     
     fun stopServer() {
         LogManager.i(TAG, "Stopping API server")
+        startupJob?.cancel()
+        startupJob = null
         apiServer?.stop()
         model?.close()  // Explicitly close to free native resources
         apiServer = null
         model = null
         isRunning = false
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } else {
+                @Suppress("DEPRECATION")
+                stopForeground(true)
+            }
+        } catch (e: Exception) {
+            LogManager.w(TAG, "Error stopping foreground service: ${e.message}")
+        }
         LogManager.i(TAG, "API server stopped")
     }
     

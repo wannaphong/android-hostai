@@ -21,6 +21,7 @@ class SettingsManager(context: Context) {
         private const val KEY_MAX_CONCURRENCY = "max_concurrency"
         private const val KEY_MAX_CONTEXT_LENGTH = "max_context_length"
         private const val KEY_MULTIMODAL_ENABLED = "multimodal_enabled"
+        private const val KEY_API_KEY = "api_key"
 
         const val BACKEND_CPU = "cpu"
         const val BACKEND_GPU = "gpu"
@@ -178,5 +179,26 @@ class SettingsManager(context: Context) {
      */
     fun setMultimodalEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_MULTIMODAL_ENABLED, enabled).apply()
+    }
+
+    /**
+     * Get API key setting (default: empty string = no auth required)
+     */
+    fun getApiKey(): String {
+        return prefs.getString(KEY_API_KEY, "") ?: ""
+    }
+
+    /**
+     * Set API key
+     */
+    fun setApiKey(apiKey: String) {
+        prefs.edit().putString(KEY_API_KEY, apiKey.trim()).apply()
+    }
+
+    /**
+     * Check if an API key is required
+     */
+    fun isApiKeyRequired(): Boolean {
+        return getApiKey().isNotEmpty()
     }
 }
